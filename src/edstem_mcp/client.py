@@ -315,20 +315,23 @@ class EdClient:
         type: str = "comment",
         is_private: bool = False,
         is_anonymous: bool = False,
+        parent_id: int | None = None,
     ) -> dict[str, Any]:
         """Post a comment or answer on a thread.
 
         ``type`` should be ``"comment"`` or ``"answer"``.
         ``content`` should be Ed XML.
+        ``parent_id`` nests the reply under an existing comment.
         """
+        body: dict[str, Any] = {
+            "type": type,
+            "content": content,
+            "is_private": is_private,
+            "is_anonymous": is_anonymous,
+        }
+        if parent_id is not None:
+            body["parent_id"] = parent_id
         return await self._post(
             f"/threads/{thread_id}/comments",
-            json={
-                "comment": {
-                    "type": type,
-                    "content": content,
-                    "is_private": is_private,
-                    "is_anonymous": is_anonymous,
-                }
-            },
+            json={"comment": body},
         )

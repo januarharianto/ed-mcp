@@ -499,6 +499,7 @@ async def reply_to_thread(
     type: str = "comment",
     is_private: bool = False,
     is_anonymous: bool = False,
+    parent_id: int | None = None,
 ) -> str:
     """Post a comment or answer on a thread.
 
@@ -511,6 +512,7 @@ async def reply_to_thread(
         type: "comment" or "answer".
         is_private: Whether the reply is private (visible to staff only).
         is_anonymous: Whether the reply is anonymous.
+        parent_id: ID of an existing comment to nest this reply under (optional).
     """
     try:
         result = await _get_client().reply_to_thread(
@@ -519,6 +521,7 @@ async def reply_to_thread(
             type=type,
             is_private=is_private,
             is_anonymous=is_anonymous,
+            parent_id=parent_id,
         )
         c = result.get("comment", result)
         return _json({"id": c.get("id"), "thread_id": c.get("thread_id"), "type": c.get("type")})
