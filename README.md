@@ -1,6 +1,6 @@
-# edstem-mcp
+# An Ed MCP server
 
-Talk to your [Ed Discussion](https://edstem.org) courses using plain English. This tool connects Claude to Ed so you can browse threads, reply to students, check what needs attention, and manage your course -- all by just asking.
+Talk to [Ed Discussion](https://edstem.org) boards using plain English. This tool connects LLMs that can use MCPs (e.g. Claude) to Ed so you can browse threads, reply to students, check what needs attention and more.
 
 ## What can I do with this?
 
@@ -8,7 +8,7 @@ Once set up, you can ask Claude things like:
 
 > "What questions haven't been answered yet in ENVX2001?"
 
-Claude will look up your course, find unanswered questions, and show you a summary. Behind the scenes it uses tools like `list_courses` and `list_threads` -- but you don't need to know that.
+Claude will look up your course, find unanswered questions, and show you a summary. Behind the scenes it uses tools like `list_courses` and `list_threads` from the MCP.
 
 Here are some more examples:
 
@@ -24,7 +24,7 @@ Here are some more examples:
 | "What has student Jane Smith been posting about?" | Looks up the student and shows their recent activity (`get_user_activity`) |
 | "This question is a duplicate of #35, mark it" | Marks the thread as a duplicate and links to the original (`mark_duplicate`) |
 
-You don't need to memorise any tool names. Just describe what you want and Claude will figure out which tools to use.
+Hopefully a clear description will give you the response that you want.
 
 ## Setup
 
@@ -49,7 +49,7 @@ cd ed-mcp
 uv sync
 ```
 
-This downloads the project and installs its dependencies. Remember where you put it -- you'll need the path in the next step.
+ This downloads the project and installs its dependencies. Remember where you put it as you will need the path in the next step.
 
 ### 3. Get your Ed API token
 
@@ -59,15 +59,6 @@ Go to your [Ed settings page](https://edstem.org/settings/api-tokens), create a 
 
 How you connect depends on which Claude app you're using.
 
-#### Claude Code (terminal)
-
-Run this command, replacing the path and token with your own:
-
-```bash
-claude mcp add --transport stdio --scope user edstem \
-  --env ED_API_TOKEN=your_token_here \
-  -- uv run --directory /path/to/ed-mcp python -m edstem_mcp.server
-```
 
 #### Claude Desktop
 
