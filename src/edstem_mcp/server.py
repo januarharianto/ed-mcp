@@ -106,7 +106,7 @@ def _trim_thread_detail(data: dict) -> dict:
 
 @mcp.tool()
 async def get_user() -> str:
-    """Get the authenticated user's profile. Use list_courses for enrolled courses."""
+    """Get the authenticated user's profile (name, email, role). Call list_courses instead to see enrolled courses."""
     try:
         result = await _get_client().get_user()
         u = result.get("user", result)
@@ -124,7 +124,7 @@ async def get_user() -> str:
 
 @mcp.tool()
 async def list_courses() -> str:
-    """List enrolled courses (compact). Returns id, code, name, year, session, and status only."""
+    """List all courses the user is enrolled in. Call this first to find a course_id before using other tools. Returns id, code, name, year, session, and status."""
     try:
         result = await _get_client().get_user()
         courses = [
@@ -145,12 +145,10 @@ async def list_courses() -> str:
 
 @mcp.tool()
 async def get_course_stats(course_id: int) -> str:
-    """Get a quick course overview: enrollment, unanswered questions, unresolved threads, and top categories.
-
-    Makes concurrent API calls for efficiency.
+    """Get a quick course overview for daily review. Returns enrollment count, number of unanswered questions, number of unresolved threads, and top categories by volume.
 
     Args:
-        course_id: The course ID.
+        course_id: The course ID (use list_courses to find it).
     """
     try:
         client = _get_client()
@@ -207,10 +205,10 @@ async def get_course_stats(course_id: int) -> str:
 
 @mcp.tool()
 async def list_categories(course_id: int) -> str:
-    """List all thread categories and subcategories in a course.
+    """List the available thread categories and subcategories in a course. Use this to find valid category names before creating or recategorising threads.
 
     Args:
-        course_id: The course ID.
+        course_id: The course ID (use list_courses to find it).
     """
     try:
         result = await _get_client().get_course(course_id)
@@ -241,14 +239,14 @@ async def list_threads(
     sort: str = "new",
     filter: str | None = None,
 ) -> str:
-    """List threads in a course.
+    """Browse threads in a course. Returns compact summaries (no full content). Use get_thread or get_course_thread to read a specific thread's content.
 
     Args:
-        course_id: The course ID.
+        course_id: The course ID (use list_courses to find it).
         limit: Max threads to return (default 30).
-        offset: Pagination offset.
-        sort: Sort order — "new", "top", or "trending".
-        filter: Optional filter — "unresolved", "unanswered", "mine", "following".
+        offset: Pagination offset (use with limit to page through results).
+        sort: Sort order — "new" for most recent, "top" for most voted, or "trending" for currently active.
+        filter: Narrow results — "unanswered" for questions needing a response, "unresolved" for threads with open follow-ups, "mine" for your own threads, "following" for threads you follow.
     """
     try:
         result = await _get_client().list_threads(
@@ -261,10 +259,10 @@ async def list_threads(
 
 @mcp.tool()
 async def get_thread(thread_id: int) -> str:
-    """Get a thread by its global ID, including all comments and answers.
+    """Read a thread's full content, comments, and answers. Use this when you have a thread ID from list_threads or search_threads results. For looking up a thread by its number (e.g. #42), use get_course_thread instead.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads results).
     """
     try:
         result = await _get_client().get_thread(thread_id)
@@ -275,11 +273,11 @@ async def get_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def get_course_thread(course_id: int, thread_number: int) -> str:
-    """Get a thread by its course-relative number (e.g. #42 as shown in the UI).
+    """Read a thread by its number as shown in the Ed UI (e.g. #42, #220). Use this when someone refers to a thread by number. Returns full content, comments, and answers.
 
     Args:
-        course_id: The course ID.
-        thread_number: The course-relative thread number.
+        course_id: The course ID (use list_courses to find it).
+        thread_number: The thread number as shown in the UI (e.g. 42 for thread #42).
     """
     try:
         result = await _get_client().get_course_thread(course_id, thread_number)
@@ -295,12 +293,10 @@ _ED_URL_RE = re.compile(
 
 @mcp.tool()
 async def get_thread_by_url(url: str) -> str:
-    """Get a thread by its Ed Discussion URL.
-
-    Accepts URLs like https://edstem.org/au/courses/12345/discussion/220
+    """Read a thread by pasting its Ed Discussion URL. Use this when someone shares a link to a thread. Returns full content, comments, and answers.
 
     Args:
-        url: Full Ed Discussion thread URL.
+        url: Full Ed Discussion thread URL (e.g. https://edstem.org/au/courses/12345/discussion/220).
     """
     m = _ED_URL_RE.search(url)
     if not m:
@@ -315,11 +311,11 @@ async def get_thread_by_url(url: str) -> str:
 
 @mcp.tool()
 async def accept_answer(thread_id: int, comment_id: int) -> str:
-    """Mark a comment as the accepted answer on a question thread.
+    """Mark a comment as the accepted answer on a question thread. Use get_thread first to find the comment_id of the correct answer.
 
     Args:
         thread_id: The global thread ID.
-        comment_id: The ID of the comment to accept as the answer.
+        comment_id: The ID of the comment to accept (from get_thread results).
     """
     try:
         result = await _get_client().accept_answer(thread_id, comment_id)
@@ -331,11 +327,11 @@ async def accept_answer(thread_id: int, comment_id: int) -> str:
 
 @mcp.tool()
 async def mark_duplicate(thread_id: int, original_thread_id: int) -> str:
-    """Mark a thread as a duplicate of another thread.
+    """Mark a thread as a duplicate of another thread. Use this when a question has already been answered elsewhere to point students to the original.
 
     Args:
-        thread_id: The global ID of the thread to mark as duplicate.
-        original_thread_id: The global ID of the original thread.
+        thread_id: The global ID of the duplicate thread.
+        original_thread_id: The global ID of the original thread it duplicates.
     """
     try:
         await _get_client().mark_duplicate(thread_id, original_thread_id)
@@ -346,7 +342,7 @@ async def mark_duplicate(thread_id: int, original_thread_id: int) -> str:
 
 @mcp.tool()
 async def unmark_duplicate(thread_id: int) -> str:
-    """Remove the duplicate mark from a thread.
+    """Remove the duplicate mark from a thread, restoring it as a standalone thread.
 
     Args:
         thread_id: The global ID of the thread to unmark.
@@ -360,11 +356,11 @@ async def unmark_duplicate(thread_id: int) -> str:
 
 @mcp.tool()
 async def search_threads(course_id: int, query: str, limit: int = 20) -> str:
-    """Search threads in a course by keyword.
+    """Search threads in a course by keyword. Returns compact summaries. Use get_thread to read the full content of a result.
 
     Args:
-        course_id: The course ID.
-        query: Search keywords.
+        course_id: The course ID (use list_courses to find it).
+        query: Search keywords (e.g. "peer review", "exam", "deadline").
         limit: Max results (default 20).
     """
     try:
@@ -385,20 +381,17 @@ async def create_thread(
     is_private: bool = False,
     is_anonymous: bool = False,
 ) -> str:
-    """Create a new thread in a course.
-
-    Content should be Ed XML format, e.g.:
-    <document version="2.0"><paragraph>Hello world</paragraph></document>
+    """Create a new thread in a course. Wrap content in Ed XML: <document version="2.0"><paragraph>Your text here</paragraph></document>. Use list_categories to find valid category names.
 
     Args:
-        course_id: The course ID.
+        course_id: The course ID (use list_courses to find it).
         title: Thread title.
         content: Thread body in Ed XML format.
-        type: Thread type — "post", "question", or "announcement".
-        category: Category name.
-        subcategory: Subcategory name.
-        is_private: Whether the thread is private (visible to staff only).
-        is_anonymous: Whether the thread is anonymous.
+        type: "post" for a discussion, "question" for a question that can be answered, or "announcement" for a course-wide notice.
+        category: Category name (use list_categories to see options).
+        subcategory: Subcategory name (optional).
+        is_private: If true, only staff can see the thread.
+        is_anonymous: If true, the author's name is hidden.
     """
     try:
         result = await _get_client().create_thread(
@@ -425,14 +418,14 @@ async def edit_thread(
     category: str | None = None,
     subcategory: str | None = None,
 ) -> str:
-    """Edit an existing thread.  Only provided fields are updated.
+    """Edit an existing thread's title, content, or category. Only provided fields are updated; omitted fields are left unchanged.
 
     Args:
         thread_id: The global thread ID.
-        title: New title (optional).
-        content: New body in Ed XML format (optional).
-        category: New category (optional).
-        subcategory: New subcategory (optional).
+        title: New title (leave empty to keep current).
+        content: New body in Ed XML format (leave empty to keep current).
+        category: New category name (leave empty to keep current; use list_categories for valid names).
+        subcategory: New subcategory name (leave empty to keep current).
     """
     try:
         result = await _get_client().edit_thread(
@@ -454,11 +447,11 @@ async def bulk_recategorise(
     category: str,
     subcategory: str = "",
 ) -> str:
-    """Recategorise multiple threads at once.
+    """Move multiple threads to a new category at once. Use search_threads or list_threads to find thread IDs, and list_categories for valid category names.
 
     Args:
-        thread_ids: List of global thread IDs to recategorise.
-        category: Target category name.
+        thread_ids: List of global thread IDs to move.
+        category: Target category name (use list_categories to see options).
         subcategory: Target subcategory name (optional).
     """
     client = _get_client()
@@ -481,7 +474,7 @@ async def bulk_recategorise(
 
 @mcp.tool()
 async def delete_thread(thread_id: int) -> str:
-    """Delete a thread.
+    """Permanently delete a thread and all its comments. This cannot be undone.
 
     Args:
         thread_id: The global thread ID.
@@ -500,7 +493,7 @@ async def delete_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def lock_thread(thread_id: int) -> str:
-    """Lock a thread (prevent new comments).
+    """Lock a thread to prevent new comments. Useful after a question is resolved or a discussion is concluded.
 
     Args:
         thread_id: The global thread ID.
@@ -514,7 +507,7 @@ async def lock_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def unlock_thread(thread_id: int) -> str:
-    """Unlock a thread.
+    """Unlock a thread to allow new comments again.
 
     Args:
         thread_id: The global thread ID.
@@ -528,7 +521,7 @@ async def unlock_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def pin_thread(thread_id: int) -> str:
-    """Pin a thread to the top of the course feed.
+    """Pin a thread so it stays at the top of the course feed. Good for important announcements or FAQs.
 
     Args:
         thread_id: The global thread ID.
@@ -542,7 +535,7 @@ async def pin_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def unpin_thread(thread_id: int) -> str:
-    """Unpin a thread.
+    """Unpin a thread from the top of the course feed.
 
     Args:
         thread_id: The global thread ID.
@@ -556,7 +549,7 @@ async def unpin_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def endorse_thread(thread_id: int) -> str:
-    """Endorse a thread (add instructor badge).
+    """Endorse a thread with an instructor badge to signal it contains good content or a correct answer.
 
     Args:
         thread_id: The global thread ID.
@@ -570,7 +563,7 @@ async def endorse_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def unendorse_thread(thread_id: int) -> str:
-    """Remove endorsement from a thread.
+    """Remove the instructor endorsement badge from a thread.
 
     Args:
         thread_id: The global thread ID.
@@ -589,10 +582,10 @@ async def unendorse_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def list_users(course_id: int) -> str:
-    """List users enrolled in a course (compact: id, name, role).
+    """List all students and staff enrolled in a course. Use this to find a user_id before calling get_user_activity.
 
     Args:
-        course_id: The course ID.
+        course_id: The course ID (use list_courses to find it).
     """
     try:
         result = await _get_client().list_users(course_id)
@@ -621,14 +614,14 @@ async def get_user_activity(
     offset: int = 0,
     filter: str | None = None,
 ) -> str:
-    """Get a user's activity in a course (compact thread/comment summaries).
+    """See what a specific user has been posting and commenting in a course. Use list_users first to find the user_id.
 
     Args:
-        user_id: The user ID.
-        course_id: The course ID.
+        user_id: The user ID (use list_users to find it).
+        course_id: The course ID (use list_courses to find it).
         limit: Max entries to return (default 30).
-        offset: Pagination offset.
-        filter: Optional filter — "all", "thread", "answer", "comment".
+        offset: Pagination offset (use with limit to page through results).
+        filter: Narrow results — "thread" for threads only, "answer" for answers only, "comment" for comments only, or "all" for everything.
     """
     try:
         result = await _get_client().get_user_activity(
@@ -660,10 +653,10 @@ async def get_user_activity(
 
 @mcp.tool()
 async def upload_file(file_path: str) -> str:
-    """Upload a local file to Ed and return its URL.
+    """Upload a file from your computer to Ed Discussion and get a URL you can use in thread content or comments.
 
     Args:
-        file_path: Absolute path to the file on disk.
+        file_path: Absolute path to the file on your computer.
     """
     try:
         p = Path(file_path)
@@ -689,18 +682,15 @@ async def reply_to_thread(
     is_anonymous: bool = False,
     parent_id: int | None = None,
 ) -> str:
-    """Post a comment or answer on a thread.
-
-    Content should be Ed XML format, e.g.:
-    <document version="2.0"><paragraph>Great question!</paragraph></document>
+    """Reply to a thread with a comment or answer. Wrap content in Ed XML: <document version="2.0"><paragraph>Your text here</paragraph></document>
 
     Args:
         thread_id: The global thread ID.
         content: Reply body in Ed XML format.
-        type: "comment" or "answer".
-        is_private: Whether the reply is private (visible to staff only).
-        is_anonymous: Whether the reply is anonymous.
-        parent_id: ID of an existing comment to nest this reply under (optional).
+        type: "comment" for a general reply, or "answer" for a direct answer to a question thread.
+        is_private: If true, only staff can see this reply.
+        is_anonymous: If true, the author's name is hidden.
+        parent_id: To nest this reply under an existing comment, pass that comment's ID here.
     """
     try:
         result = await _get_client().reply_to_thread(
@@ -719,12 +709,10 @@ async def reply_to_thread(
 
 @mcp.tool()
 async def edit_comment(comment_id: int, content: str) -> str:
-    """Edit an existing comment's content.
-
-    Content should be Ed XML format.
+    """Edit an existing comment's content. Replaces the entire body with the new content in Ed XML format.
 
     Args:
-        comment_id: The comment ID.
+        comment_id: The comment ID (from get_thread results).
         content: New body in Ed XML format.
     """
     try:
@@ -737,10 +725,10 @@ async def edit_comment(comment_id: int, content: str) -> str:
 
 @mcp.tool()
 async def delete_comment(comment_id: int) -> str:
-    """Delete a comment.
+    """Permanently delete a comment. This cannot be undone.
 
     Args:
-        comment_id: The comment ID.
+        comment_id: The comment ID (from get_thread results).
     """
     try:
         await _get_client().delete_comment(comment_id)
