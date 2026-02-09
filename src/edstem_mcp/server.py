@@ -30,6 +30,26 @@ def _json(data: dict) -> str:
     return json.dumps(data, separators=(",", ":"), default=str)
 
 
+# Keys kept in thread summaries (list/search). Full content via get_thread.
+_THREAD_SUMMARY_KEYS = {
+    "id", "number", "type", "title", "category", "subcategory",
+    "created_at", "is_pinned", "is_private", "is_endorsed",
+    "is_answered", "is_locked", "reply_count", "vote_count",
+    "view_count", "unresolved_count",
+}
+
+
+def _summarise_threads(threads: list[dict]) -> list[dict]:
+    """Extract compact summaries from a list of thread dicts."""
+    return [
+        {
+            **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
+            "user": t.get("user", {}).get("name", ""),
+        }
+        for t in threads
+    ]
+
+
 # ======================================================================
 # User & Courses
 # ======================================================================
@@ -92,20 +112,7 @@ async def list_threads(
         result = await _get_client().list_threads(
             course_id, limit=limit, offset=offset, sort=sort, filter=filter
         )
-        _THREAD_SUMMARY_KEYS = {
-            "id", "number", "type", "title", "category", "subcategory",
-            "created_at", "is_pinned", "is_private", "is_endorsed",
-            "is_answered", "is_locked", "reply_count", "vote_count",
-            "view_count", "unresolved_count",
-        }
-        threads = [
-            {
-                **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
-                "user": t.get("user", {}).get("name", ""),
-            }
-            for t in result.get("threads", [])
-        ]
-        return _json({"threads": threads})
+        return _json({"threads": _summarise_threads(result.get("threads", []))})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -150,20 +157,7 @@ async def search_threads(course_id: int, query: str, limit: int = 20) -> str:
     """
     try:
         result = await _get_client().search_threads(course_id, query, limit=limit)
-        _THREAD_SUMMARY_KEYS = {
-            "id", "number", "type", "title", "category", "subcategory",
-            "created_at", "is_pinned", "is_private", "is_endorsed",
-            "is_answered", "is_locked", "reply_count", "vote_count",
-            "view_count", "unresolved_count",
-        }
-        threads = [
-            {
-                **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
-                "user": t.get("user", {}).get("name", ""),
-            }
-            for t in result.get("threads", [])
-        ]
-        return _json({"threads": threads})
+        return _json({"threads": _summarise_threads(result.get("threads", []))})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
