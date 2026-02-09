@@ -449,6 +449,37 @@ async def edit_thread(
 
 
 @mcp.tool()
+async def bulk_recategorise(
+    thread_ids: list[int],
+    category: str,
+    subcategory: str = "",
+) -> str:
+    """Recategorise multiple threads at once.
+
+    Args:
+        thread_ids: List of global thread IDs to recategorise.
+        category: Target category name.
+        subcategory: Target subcategory name (optional).
+    """
+    client = _get_client()
+
+    async def _update(tid: int) -> dict:
+        try:
+            await client.edit_thread(tid, category=category, subcategory=subcategory)
+            return {"id": tid, "ok": True}
+        except EdAPIError as e:
+            return {"id": tid, "ok": False, "error": e.message}
+
+    results = await asyncio.gather(*[_update(tid) for tid in thread_ids])
+    succeeded = sum(1 for r in results if r["ok"])
+    failed = [r for r in results if not r["ok"]]
+    summary: dict = {"updated": succeeded, "total": len(thread_ids)}
+    if failed:
+        summary["failed"] = failed
+    return _json(summary)
+
+
+@mcp.tool()
 async def delete_thread(thread_id: int) -> str:
     """Delete a thread.
 
