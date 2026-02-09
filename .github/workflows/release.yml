@@ -14,12 +14,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Extract changelog for this version
-        id: changelog
         run: |
           version="${GITHUB_REF_NAME#v}"
-          # Extract the section for this version from CHANGELOG.md
-          awk "/^## v?${version}/,/^## /{if(/^## / && !/^## v?${version}/)exit; print}" CHANGELOG.md \
-            | tail -n +2 > release_notes.md
+          awk "BEGIN{f=0} /^## v?${version}/{f=1; next} f && /^## /{exit} f{print}" \
+            CHANGELOG.md > release_notes.md
 
       - name: Create GitHub release
         run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release_notes.md
