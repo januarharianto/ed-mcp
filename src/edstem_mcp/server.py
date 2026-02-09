@@ -571,6 +571,38 @@ async def reply_to_thread(
         return f"Error: {e.message}"
 
 
+@mcp.tool()
+async def edit_comment(comment_id: int, content: str) -> str:
+    """Edit an existing comment's content.
+
+    Content should be Ed XML format.
+
+    Args:
+        comment_id: The comment ID.
+        content: New body in Ed XML format.
+    """
+    try:
+        result = await _get_client().edit_comment(comment_id, content=content)
+        c = result.get("comment", result)
+        return _json({"id": c.get("id"), "thread_id": c.get("thread_id")})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def delete_comment(comment_id: int) -> str:
+    """Delete a comment.
+
+    Args:
+        comment_id: The comment ID.
+    """
+    try:
+        await _get_client().delete_comment(comment_id)
+        return "Comment deleted."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
 # ======================================================================
 # Entry point
 # ======================================================================

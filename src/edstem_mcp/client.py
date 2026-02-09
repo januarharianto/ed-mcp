@@ -354,3 +354,14 @@ class EdClient:
             f"/threads/{thread_id}/comments",
             json={"comment": body},
         )
+
+    async def edit_comment(self, comment_id: int, *, content: str) -> dict[str, Any]:
+        """Edit an existing comment's content."""
+        return await self._put(
+            f"/comments/{comment_id}",
+            json={"comment": {"content": content}},
+        )
+
+    async def delete_comment(self, comment_id: int) -> dict[str, Any]:
+        """Delete a comment."""
+        return await self._delete(f"/comments/{comment_id}")
