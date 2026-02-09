@@ -254,7 +254,8 @@ async def create_thread(
             is_private=is_private,
             is_anonymous=is_anonymous,
         )
-        return _json(result)
+        t = result.get("thread", result)
+        return _json({"id": t.get("id"), "number": t.get("number"), "title": t.get("title")})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -284,7 +285,8 @@ async def edit_thread(
             category=category,
             subcategory=subcategory,
         )
-        return _json(result)
+        t = result.get("thread", result)
+        return _json({"id": t.get("id"), "number": t.get("number"), "title": t.get("title")})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -518,7 +520,8 @@ async def reply_to_thread(
             is_private=is_private,
             is_anonymous=is_anonymous,
         )
-        return _json(result)
+        c = result.get("comment", result)
+        return _json({"id": c.get("id"), "thread_id": c.get("thread_id"), "type": c.get("type")})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
