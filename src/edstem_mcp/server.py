@@ -27,7 +27,7 @@ def _get_client() -> EdClient:
 
 def _json(data: dict) -> str:
     """Compact JSON serialisation for tool responses."""
-    return json.dumps(data, indent=2, default=str)
+    return json.dumps(data, separators=(",", ":"), default=str)
 
 
 # ======================================================================
