@@ -233,6 +233,25 @@ class EdClient:
         thread_body.update(updates)
         return await self._put(f"/threads/{thread_id}", json={"thread": thread_body})
 
+    async def accept_answer(self, thread_id: int, comment_id: int) -> dict[str, Any]:
+        """Mark a comment as the accepted answer on a question thread."""
+        current = (await self.get_thread(thread_id))["thread"]
+        thread_body = {
+            "type": current["type"],
+            "title": current["title"],
+            "category": current.get("category", ""),
+            "subcategory": current.get("subcategory", ""),
+            "subsubcategory": current.get("subsubcategory", ""),
+            "content": current["content"],
+            "is_pinned": current.get("is_pinned", False),
+            "is_private": current.get("is_private", False),
+            "is_anonymous": current.get("is_anonymous", False),
+            "is_megathread": current.get("is_megathread", False),
+            "anonymous_comments": current.get("anonymous_comments", False),
+            "accepted_id": comment_id,
+        }
+        return await self._put(f"/threads/{thread_id}", json={"thread": thread_body})
+
     async def delete_thread(self, thread_id: int) -> dict[str, Any]:
         """Delete a thread."""
         return await self._delete(f"/threads/{thread_id}")

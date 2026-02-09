@@ -228,6 +228,22 @@ async def get_thread_by_url(url: str) -> str:
 
 
 @mcp.tool()
+async def accept_answer(thread_id: int, comment_id: int) -> str:
+    """Mark a comment as the accepted answer on a question thread.
+
+    Args:
+        thread_id: The global thread ID.
+        comment_id: The ID of the comment to accept as the answer.
+    """
+    try:
+        result = await _get_client().accept_answer(thread_id, comment_id)
+        t = result.get("thread", result)
+        return _json({"id": t.get("id"), "accepted_id": t.get("accepted_id")})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
 async def search_threads(course_id: int, query: str, limit: int = 20) -> str:
     """Search threads in a course by keyword.
 
