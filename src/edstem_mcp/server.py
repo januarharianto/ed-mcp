@@ -1,0 +1,456 @@
+"""MCP server for Ed Discussion (edstem.org)."""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+
+from mcp.server.fastmcp import FastMCP
+
+from edstem_mcp.client import EdAPIError, EdClient
+
+logger = logging.getLogger(__name__)
+
+mcp = FastMCP("edstem")
+
+# Lazy-initialised client (created on first tool call)
+_client: EdClient | None = None
+
+
+def _get_client() -> EdClient:
+    global _client
+    if _client is None:
+        _client = EdClient()
+    return _client
+
+
+def _json(data: dict) -> str:
+    """Compact JSON serialisation for tool responses."""
+    return json.dumps(data, indent=2, default=str)
+
+
+# ======================================================================
+# User & Courses
+# ======================================================================
+
+
+@mcp.tool()
+async def get_user() -> str:
+    """Get the authenticated user's info and enrolled courses."""
+    try:
+        result = await _get_client().get_user()
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def list_courses() -> str:
+    """List enrolled courses (compact). Returns id, code, name, year, session, and status only."""
+    try:
+        result = await _get_client().get_user()
+        courses = [
+            {
+                "id": c["course"]["id"],
+                "code": c["course"].get("code", ""),
+                "name": c["course"].get("name", ""),
+                "year": c["course"].get("year", ""),
+                "session": c["course"].get("session", ""),
+                "status": c["course"].get("status", ""),
+            }
+            for c in result.get("courses", [])
+        ]
+        return _json(courses)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+# ======================================================================
+# Threads
+# ======================================================================
+
+
+@mcp.tool()
+async def list_threads(
+    course_id: int,
+    limit: int = 30,
+    offset: int = 0,
+    sort: str = "new",
+    filter: str | None = None,
+) -> str:
+    """List threads in a course.
+
+    Args:
+        course_id: The course ID.
+        limit: Max threads to return (default 30).
+        offset: Pagination offset.
+        sort: Sort order — "new", "top", or "trending".
+        filter: Optional filter — "unresolved", "unanswered", "mine", "following".
+    """
+    try:
+        result = await _get_client().list_threads(
+            course_id, limit=limit, offset=offset, sort=sort, filter=filter
+        )
+        _THREAD_SUMMARY_KEYS = {
+            "id", "number", "type", "title", "category", "subcategory",
+            "created_at", "is_pinned", "is_private", "is_endorsed",
+            "is_answered", "is_locked", "reply_count", "vote_count",
+            "view_count", "unresolved_count",
+        }
+        threads = [
+            {
+                **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
+                "user": t.get("user", {}).get("name", ""),
+            }
+            for t in result.get("threads", [])
+        ]
+        return _json({"threads": threads})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def get_thread(thread_id: int) -> str:
+    """Get a thread by its global ID, including all comments and answers.
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        result = await _get_client().get_thread(thread_id)
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def get_course_thread(course_id: int, thread_number: int) -> str:
+    """Get a thread by its course-relative number (e.g. #42 as shown in the UI).
+
+    Args:
+        course_id: The course ID.
+        thread_number: The course-relative thread number.
+    """
+    try:
+        result = await _get_client().get_course_thread(course_id, thread_number)
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def search_threads(course_id: int, query: str, limit: int = 20) -> str:
+    """Search threads in a course by keyword.
+
+    Args:
+        course_id: The course ID.
+        query: Search keywords.
+        limit: Max results (default 20).
+    """
+    try:
+        result = await _get_client().search_threads(course_id, query, limit=limit)
+        _THREAD_SUMMARY_KEYS = {
+            "id", "number", "type", "title", "category", "subcategory",
+            "created_at", "is_pinned", "is_private", "is_endorsed",
+            "is_answered", "is_locked", "reply_count", "vote_count",
+            "view_count", "unresolved_count",
+        }
+        threads = [
+            {
+                **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
+                "user": t.get("user", {}).get("name", ""),
+            }
+            for t in result.get("threads", [])
+        ]
+        return _json({"threads": threads})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def create_thread(
+    course_id: int,
+    title: str,
+    content: str,
+    type: str = "post",
+    category: str = "",
+    subcategory: str = "",
+    is_private: bool = False,
+    is_anonymous: bool = False,
+) -> str:
+    """Create a new thread in a course.
+
+    Content should be Ed XML format, e.g.:
+    <document version="2.0"><paragraph>Hello world</paragraph></document>
+
+    Args:
+        course_id: The course ID.
+        title: Thread title.
+        content: Thread body in Ed XML format.
+        type: Thread type — "post", "question", or "announcement".
+        category: Category name.
+        subcategory: Subcategory name.
+        is_private: Whether the thread is private (visible to staff only).
+        is_anonymous: Whether the thread is anonymous.
+    """
+    try:
+        result = await _get_client().create_thread(
+            course_id,
+            title=title,
+            content=content,
+            type=type,
+            category=category,
+            subcategory=subcategory,
+            is_private=is_private,
+            is_anonymous=is_anonymous,
+        )
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def edit_thread(
+    thread_id: int,
+    title: str | None = None,
+    content: str | None = None,
+    category: str | None = None,
+    subcategory: str | None = None,
+) -> str:
+    """Edit an existing thread.  Only provided fields are updated.
+
+    Args:
+        thread_id: The global thread ID.
+        title: New title (optional).
+        content: New body in Ed XML format (optional).
+        category: New category (optional).
+        subcategory: New subcategory (optional).
+    """
+    try:
+        result = await _get_client().edit_thread(
+            thread_id,
+            title=title,
+            content=content,
+            category=category,
+            subcategory=subcategory,
+        )
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def delete_thread(thread_id: int) -> str:
+    """Delete a thread.
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        await _get_client().delete_thread(thread_id)
+        return "Thread deleted."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+# ======================================================================
+# Moderation
+# ======================================================================
+
+
+@mcp.tool()
+async def lock_thread(thread_id: int) -> str:
+    """Lock a thread (prevent new comments).
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        await _get_client().lock_thread(thread_id)
+        return "Thread locked."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def unlock_thread(thread_id: int) -> str:
+    """Unlock a thread.
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        await _get_client().unlock_thread(thread_id)
+        return "Thread unlocked."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def pin_thread(thread_id: int) -> str:
+    """Pin a thread to the top of the course feed.
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        await _get_client().pin_thread(thread_id)
+        return "Thread pinned."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def unpin_thread(thread_id: int) -> str:
+    """Unpin a thread.
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        await _get_client().unpin_thread(thread_id)
+        return "Thread unpinned."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def endorse_thread(thread_id: int) -> str:
+    """Endorse a thread (add instructor badge).
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        await _get_client().endorse_thread(thread_id)
+        return "Thread endorsed."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def unendorse_thread(thread_id: int) -> str:
+    """Remove endorsement from a thread.
+
+    Args:
+        thread_id: The global thread ID.
+    """
+    try:
+        await _get_client().unendorse_thread(thread_id)
+        return "Endorsement removed."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+# ======================================================================
+# Users & Analytics
+# ======================================================================
+
+
+@mcp.tool()
+async def list_users(course_id: int) -> str:
+    """List users enrolled in a course.
+
+    Args:
+        course_id: The course ID.
+    """
+    try:
+        result = await _get_client().list_users(course_id)
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def get_user_activity(
+    user_id: int,
+    course_id: int,
+    limit: int = 30,
+    offset: int = 0,
+    filter: str | None = None,
+) -> str:
+    """Get a user's activity in a course (threads and comments).
+
+    Args:
+        user_id: The user ID.
+        course_id: The course ID.
+        limit: Max entries to return (default 30).
+        offset: Pagination offset.
+        filter: Optional filter — "all", "thread", "answer", "comment".
+    """
+    try:
+        result = await _get_client().get_user_activity(
+            user_id, course_id, limit=limit, offset=offset, filter=filter
+        )
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+# ======================================================================
+# Files
+# ======================================================================
+
+
+@mcp.tool()
+async def upload_file(file_path: str) -> str:
+    """Upload a local file to Ed and return its URL.
+
+    Args:
+        file_path: Absolute path to the file on disk.
+    """
+    try:
+        p = Path(file_path)
+        if not p.exists():
+            return f"Error: File not found: {file_path}"
+        result = await _get_client().upload_file(p)
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+# ======================================================================
+# Comments / Replies
+# ======================================================================
+
+
+@mcp.tool()
+async def reply_to_thread(
+    thread_id: int,
+    content: str,
+    type: str = "comment",
+    is_private: bool = False,
+    is_anonymous: bool = False,
+) -> str:
+    """Post a comment or answer on a thread.
+
+    Content should be Ed XML format, e.g.:
+    <document version="2.0"><paragraph>Great question!</paragraph></document>
+
+    Args:
+        thread_id: The global thread ID.
+        content: Reply body in Ed XML format.
+        type: "comment" or "answer".
+        is_private: Whether the reply is private (visible to staff only).
+        is_anonymous: Whether the reply is anonymous.
+    """
+    try:
+        result = await _get_client().reply_to_thread(
+            thread_id,
+            content=content,
+            type=type,
+            is_private=is_private,
+            is_anonymous=is_anonymous,
+        )
+        return _json(result)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+# ======================================================================
+# Entry point
+# ======================================================================
+
+if __name__ == "__main__":
+    mcp.run()
