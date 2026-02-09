@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -194,6 +195,31 @@ async def get_course_thread(course_id: int, thread_number: int) -> str:
         course_id: The course ID.
         thread_number: The course-relative thread number.
     """
+    try:
+        result = await _get_client().get_course_thread(course_id, thread_number)
+        return _json(_trim_thread_detail(result))
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+_ED_URL_RE = re.compile(
+    r"https?://edstem\.org/(?:\w+/)?courses/(\d+)/discussion/(\d+)"
+)
+
+
+@mcp.tool()
+async def get_thread_by_url(url: str) -> str:
+    """Get a thread by its Ed Discussion URL.
+
+    Accepts URLs like https://edstem.org/au/courses/12345/discussion/220
+
+    Args:
+        url: Full Ed Discussion thread URL.
+    """
+    m = _ED_URL_RE.search(url)
+    if not m:
+        return "Error: Could not parse Ed thread URL. Expected format: https://edstem.org/.../courses/{id}/discussion/{number}"
+    course_id, thread_number = int(m.group(1)), int(m.group(2))
     try:
         result = await _get_client().get_course_thread(course_id, thread_number)
         return _json(_trim_thread_detail(result))
