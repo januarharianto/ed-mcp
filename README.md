@@ -1,10 +1,47 @@
 # edstem-mcp
 
-An [MCP](https://modelcontextprotocol.io/) server that connects LLM agents to [Ed Discussion](https://edstem.org). It wraps the Ed API so that Claude (and other MCP-compatible tools) can browse courses, read and reply to threads, manage moderation, and more -- all through natural language.
+Talk to your [Ed Discussion](https://edstem.org) courses using plain English. This tool connects Claude to Ed so you can browse threads, reply to students, check what needs attention, and manage your course -- all by just asking.
+
+## What can I do with this?
+
+Once set up, you can ask Claude things like:
+
+> "What questions haven't been answered yet in ENVX2001?"
+
+Claude will look up your course, find unanswered questions, and show you a summary. Behind the scenes it uses tools like `list_courses` and `list_threads` -- but you don't need to know that.
+
+Here are some more examples:
+
+| You say | What happens |
+|---|---|
+| "Give me a quick overview of my stats course" | Fetches enrollment, unanswered questions, unresolved threads, and top categories (`get_course_stats`) |
+| "Show me thread #42 in ENVX2001" | Looks up the thread by its number and shows the full content and replies (`get_course_thread`) |
+| "Search for posts about peer review in my course" | Searches threads by keyword and returns a summary list (`search_threads`) |
+| "Reply to that thread saying the deadline has been extended" | Posts a comment on the thread (`reply_to_thread`) |
+| "Pin the announcement about the exam" | Pins the thread to the top of the course feed (`pin_thread`) |
+| "Mark that question as answered -- the first reply is correct" | Accepts the reply as the answer (`accept_answer`) |
+| "Move all the project 2 threads into the Assignments category" | Recategorises multiple threads at once (`bulk_recategorise`) |
+| "What has student Jane Smith been posting about?" | Looks up the student and shows their recent activity (`get_user_activity`) |
+| "This question is a duplicate of #35, mark it" | Marks the thread as a duplicate and links to the original (`mark_duplicate`) |
+
+You don't need to memorise any tool names. Just describe what you want and Claude will figure out which tools to use.
 
 ## Setup
 
-You need Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+### 1. Install prerequisites
+
+You'll need two things installed on your computer:
+
+- **Python 3.11 or newer** -- check with `python3 --version` in your terminal. If you don't have it, download it from [python.org](https://www.python.org/downloads/).
+- **uv** (a Python package manager) -- install it by running this in your terminal:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+  On Windows, use: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
+### 2. Download and install this project
+
+Open your terminal and run these commands one at a time:
 
 ```bash
 git clone https://github.com/januarharianto/ed-mcp.git
@@ -12,11 +49,33 @@ cd ed-mcp
 uv sync
 ```
 
-Then grab an API token from your [Ed settings page](https://edstem.org/settings/api-tokens).
+This downloads the project and installs its dependencies. Remember where you put it -- you'll need the path in the next step.
 
-## Configure with Claude Code
+### 3. Get your Ed API token
 
-Add the server to your Claude Code MCP config (`.mcp.json` in your project root or `~/.claude/settings.json` for global access):
+Go to your [Ed settings page](https://edstem.org/settings/api-tokens), create a new token, and copy it. Keep it somewhere safe -- you'll need it next.
+
+### 4. Connect to Claude
+
+How you connect depends on which Claude app you're using.
+
+#### Claude Code (terminal)
+
+Run this command, replacing the path and token with your own:
+
+```bash
+claude mcp add --transport stdio --scope user edstem \
+  --env ED_API_TOKEN=your_token_here \
+  -- uv run --directory /path/to/ed-mcp python -m edstem_mcp.server
+```
+
+#### Claude Desktop
+
+Open your Claude Desktop config file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add this inside the `"mcpServers"` section (create the file if it doesn't exist):
 
 ```json
 {
@@ -32,67 +91,65 @@ Add the server to your Claude Code MCP config (`.mcp.json` in your project root 
 }
 ```
 
-Replace `/path/to/ed-mcp` with the actual path to where you cloned the repo.
+Replace `/path/to/ed-mcp` with the actual folder path from step 2, and `your_token_here` with your API token from step 3.
+
+Restart Claude Desktop after saving the file.
+
+### 5. Test it
+
+Ask Claude: "What courses am I enrolled in on Ed?" If everything is set up correctly, you'll see a list of your courses.
+
+---
+
+## Tool reference
+
+For developers and anyone curious about what's available under the hood:
+
+### Courses and users
+
+- **`get_user`** -- Your profile info.
+- **`list_courses`** -- All enrolled courses.
+- **`get_course_stats`** -- Quick overview: enrollment, unanswered/unresolved counts, top categories.
+- **`list_users`** -- Students and staff in a course.
+- **`get_user_activity`** -- A user's thread and comment history.
+
+### Threads
+
+- **`list_threads`** -- Browse threads with sorting and filtering.
+- **`search_threads`** -- Search by keyword.
+- **`get_thread`** -- Full thread content by ID.
+- **`get_course_thread`** -- Full thread content by number (e.g. #42).
+- **`get_thread_by_url`** -- Full thread content from an Ed URL.
+- **`list_categories`** -- All categories and subcategories.
+- **`create_thread`** -- Create a post, question, or announcement.
+- **`edit_thread`** -- Update title, content, or category.
+- **`delete_thread`** -- Delete a thread.
+- **`bulk_recategorise`** -- Move multiple threads to a new category.
+
+### Comments
+
+- **`reply_to_thread`** -- Post a comment or answer (supports nested replies).
+- **`edit_comment`** -- Edit a comment.
+- **`delete_comment`** -- Delete a comment.
+
+### Moderation
+
+- **`lock_thread`** / **`unlock_thread`** -- Control whether new comments are allowed.
+- **`pin_thread`** / **`unpin_thread`** -- Pin or unpin from the course feed.
+- **`endorse_thread`** / **`unendorse_thread`** -- Instructor endorsement badge.
+- **`accept_answer`** -- Mark the accepted answer on a question.
+- **`mark_duplicate`** / **`unmark_duplicate`** -- Flag duplicate threads.
+
+### Files
+
+- **`upload_file`** -- Upload a file to Ed and get its URL.
 
 ## Environment variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `ED_API_TOKEN` | Yes | Your Ed Discussion API bearer token |
+| `ED_API_TOKEN` | Yes | Your Ed Discussion API token |
 | `ED_BASE_URL` | No | API base URL (defaults to `https://edstem.org/api`) |
-
-## Available tools
-
-### Courses and users
-
-- **`get_user`** -- Get the authenticated user's profile.
-- **`list_courses`** -- List all enrolled courses.
-- **`get_course_stats`** -- Quick course overview: enrollment count, unanswered/unresolved threads, top categories.
-- **`list_users`** -- List users enrolled in a course.
-- **`get_user_activity`** -- Get a user's thread and comment activity in a course.
-
-### Threads
-
-- **`list_threads`** -- List threads in a course, with sorting and filtering.
-- **`search_threads`** -- Search threads by keyword.
-- **`get_thread`** -- Get a thread by its global ID, including all comments and answers.
-- **`get_course_thread`** -- Get a thread by its course-relative number (e.g. #42).
-- **`get_thread_by_url`** -- Get a thread by pasting its Ed Discussion URL.
-- **`list_categories`** -- List all thread categories and subcategories in a course.
-- **`create_thread`** -- Create a new thread (post, question, or announcement).
-- **`edit_thread`** -- Edit an existing thread's title, content, or category.
-- **`delete_thread`** -- Delete a thread.
-- **`bulk_recategorise`** -- Move multiple threads to a new category at once.
-
-### Comments
-
-- **`reply_to_thread`** -- Post a comment or answer on a thread (supports nested replies).
-- **`edit_comment`** -- Edit an existing comment.
-- **`delete_comment`** -- Delete a comment.
-
-### Moderation
-
-- **`lock_thread`** / **`unlock_thread`** -- Prevent or allow new comments.
-- **`pin_thread`** / **`unpin_thread`** -- Pin or unpin a thread in the course feed.
-- **`endorse_thread`** / **`unendorse_thread`** -- Add or remove the instructor endorsement badge.
-- **`accept_answer`** -- Mark a comment as the accepted answer on a question thread.
-- **`mark_duplicate`** / **`unmark_duplicate`** -- Mark or unmark a thread as a duplicate.
-
-### Files
-
-- **`upload_file`** -- Upload a local file to Ed and get back its URL.
-
-## Design notes
-
-List and search tools return compact summaries (title, category, reply count, etc.) to keep LLM context usage low. Full thread content, comments, and answers are only returned when you fetch a specific thread. Write operations return minimal confirmations.
-
-Thread content in Ed uses an XML format:
-
-```xml
-<document version="2.0"><paragraph>Hello world</paragraph></document>
-```
-
-Both `create_thread` and `reply_to_thread` expect content in this format.
 
 ## License
 
