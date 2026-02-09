@@ -50,6 +50,53 @@ def _summarise_threads(threads: list[dict]) -> list[dict]:
     ]
 
 
+# Keys kept in full thread detail responses (get_thread / get_course_thread).
+_THREAD_DETAIL_KEYS = {
+    "id", "number", "type", "title", "content", "category", "subcategory",
+    "course_id", "user_id", "accepted_id",
+    "created_at", "is_pinned", "is_private", "is_endorsed",
+    "is_answered", "is_locked", "is_anonymous",
+    "reply_count", "vote_count", "unresolved_count",
+}
+
+_COMMENT_KEYS = {
+    "id", "user_id", "parent_id", "type", "content",
+    "is_endorsed", "is_private", "is_resolved", "is_anonymous",
+    "vote_count", "created_at",
+}
+
+_USER_KEYS = {"id", "name", "course_role"}
+
+
+def _trim_comment(c: dict) -> dict:
+    """Strip a comment/answer to essential fields, recursing into replies."""
+    trimmed = {k: c[k] for k in _COMMENT_KEYS if k in c}
+    if c.get("user"):
+        trimmed["user"] = {k: c["user"][k] for k in _USER_KEYS if k in c["user"]}
+    nested = c.get("comments", [])
+    if nested:
+        trimmed["comments"] = [_trim_comment(r) for r in nested]
+    return trimmed
+
+
+def _trim_thread_detail(data: dict) -> dict:
+    """Trim a full thread API response to essential fields."""
+    t = data.get("thread", data)
+    trimmed = {k: t[k] for k in _THREAD_DETAIL_KEYS if k in t}
+    if t.get("user"):
+        trimmed["user"] = {k: t["user"][k] for k in _USER_KEYS if k in t["user"]}
+    for key in ("answers", "comments"):
+        if t.get(key):
+            trimmed[key] = [_trim_comment(c) for c in t[key]]
+    # Compact users list (participants)
+    users = data.get("users", [])
+    if users:
+        trimmed["users"] = [
+            {k: u[k] for k in _USER_KEYS if k in u} for u in users
+        ]
+    return trimmed
+
+
 # ======================================================================
 # User & Courses
 # ======================================================================
@@ -134,7 +181,7 @@ async def get_thread(thread_id: int) -> str:
     """
     try:
         result = await _get_client().get_thread(thread_id)
-        return _json(result)
+        return _json(_trim_thread_detail(result))
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -149,7 +196,7 @@ async def get_course_thread(course_id: int, thread_number: int) -> str:
     """
     try:
         result = await _get_client().get_course_thread(course_id, thread_number)
-        return _json(result)
+        return _json(_trim_thread_detail(result))
     except EdAPIError as e:
         return f"Error: {e.message}"
 
