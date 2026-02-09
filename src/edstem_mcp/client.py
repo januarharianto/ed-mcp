@@ -252,6 +252,20 @@ class EdClient:
         }
         return await self._put(f"/threads/{thread_id}", json={"thread": thread_body})
 
+    async def mark_duplicate(self, thread_id: int, original_thread_id: int) -> dict[str, Any]:
+        """Mark a thread as a duplicate of another thread."""
+        return await self._post(
+            f"/threads/{thread_id}/mark_duplicate",
+            json={"duplicate_id": original_thread_id},
+        )
+
+    async def unmark_duplicate(self, thread_id: int) -> dict[str, Any]:
+        """Remove the duplicate mark from a thread."""
+        return await self._post(
+            f"/threads/{thread_id}/mark_duplicate",
+            json={"duplicate_id": None},
+        )
+
     async def delete_thread(self, thread_id: int) -> dict[str, Any]:
         """Delete a thread."""
         return await self._delete(f"/threads/{thread_id}")

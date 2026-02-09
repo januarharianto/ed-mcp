@@ -54,7 +54,7 @@ def _summarise_threads(threads: list[dict]) -> list[dict]:
 # Keys kept in full thread detail responses (get_thread / get_course_thread).
 _THREAD_DETAIL_KEYS = {
     "id", "number", "type", "title", "content", "category", "subcategory",
-    "course_id", "user_id", "accepted_id",
+    "course_id", "user_id", "accepted_id", "duplicate_id",
     "created_at", "is_pinned", "is_private", "is_endorsed",
     "is_answered", "is_locked", "is_anonymous",
     "reply_count", "vote_count", "unresolved_count",
@@ -239,6 +239,35 @@ async def accept_answer(thread_id: int, comment_id: int) -> str:
         result = await _get_client().accept_answer(thread_id, comment_id)
         t = result.get("thread", result)
         return _json({"id": t.get("id"), "accepted_id": t.get("accepted_id")})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def mark_duplicate(thread_id: int, original_thread_id: int) -> str:
+    """Mark a thread as a duplicate of another thread.
+
+    Args:
+        thread_id: The global ID of the thread to mark as duplicate.
+        original_thread_id: The global ID of the original thread.
+    """
+    try:
+        await _get_client().mark_duplicate(thread_id, original_thread_id)
+        return _json({"id": thread_id, "duplicate_id": original_thread_id})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def unmark_duplicate(thread_id: int) -> str:
+    """Remove the duplicate mark from a thread.
+
+    Args:
+        thread_id: The global ID of the thread to unmark.
+    """
+    try:
+        await _get_client().unmark_duplicate(thread_id)
+        return _json({"id": thread_id, "duplicate_id": None})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
