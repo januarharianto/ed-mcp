@@ -266,6 +266,10 @@ class EdClient:
             json={"duplicate_id": None},
         )
 
+    async def get_course(self, course_id: int) -> dict[str, Any]:
+        """Get course details including settings."""
+        return await self._get(f"/courses/{course_id}")
+
     async def delete_thread(self, thread_id: int) -> dict[str, Any]:
         """Delete a thread."""
         return await self._delete(f"/threads/{thread_id}")

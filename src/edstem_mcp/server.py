@@ -148,6 +148,34 @@ async def list_courses() -> str:
 
 
 @mcp.tool()
+async def list_categories(course_id: int) -> str:
+    """List all thread categories and subcategories in a course.
+
+    Args:
+        course_id: The course ID.
+    """
+    try:
+        result = await _get_client().get_course(course_id)
+        course = result.get("course", result)
+        cats = (
+            course.get("settings", {})
+            .get("discussion", {})
+            .get("categories", [])
+        )
+        compact = [
+            {
+                "name": c["name"],
+                **({"subcategories": [s["name"] for s in c["subcategories"]]}
+                   if c.get("subcategories") else {}),
+            }
+            for c in cats
+        ]
+        return _json(compact)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
 async def list_threads(
     course_id: int,
     limit: int = 30,
