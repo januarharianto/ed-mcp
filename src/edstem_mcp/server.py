@@ -57,10 +57,18 @@ def _summarise_threads(threads: list[dict]) -> list[dict]:
 
 @mcp.tool()
 async def get_user() -> str:
-    """Get the authenticated user's info and enrolled courses."""
+    """Get the authenticated user's profile. Use list_courses for enrolled courses."""
     try:
         result = await _get_client().get_user()
-        return _json(result)
+        u = result.get("user", result)
+        profile = {
+            "id": u.get("id"),
+            "name": u.get("name"),
+            "email": u.get("email"),
+            "role": u.get("role"),
+            "course_count": len(result.get("courses", [])),
+        }
+        return _json(profile)
     except EdAPIError as e:
         return f"Error: {e.message}"
 
