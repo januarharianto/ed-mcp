@@ -419,6 +419,10 @@ async def list_users(course_id: int) -> str:
         return f"Error: {e.message}"
 
 
+_ACTIVITY_THREAD_KEYS = {"id", "number", "type", "title", "category", "created_at"}
+_ACTIVITY_COMMENT_KEYS = {"id", "type", "thread_id", "created_at"}
+
+
 @mcp.tool()
 async def get_user_activity(
     user_id: int,
@@ -427,7 +431,7 @@ async def get_user_activity(
     offset: int = 0,
     filter: str | None = None,
 ) -> str:
-    """Get a user's activity in a course (threads and comments).
+    """Get a user's activity in a course (compact thread/comment summaries).
 
     Args:
         user_id: The user ID.
@@ -440,7 +444,21 @@ async def get_user_activity(
         result = await _get_client().get_user_activity(
             user_id, course_id, limit=limit, offset=offset, filter=filter
         )
-        return _json(result)
+        items = []
+        for entry in result.get("activity", []):
+            if "thread" in entry:
+                t = entry["thread"]
+                items.append({
+                    "kind": "thread",
+                    **{k: t[k] for k in _ACTIVITY_THREAD_KEYS if k in t},
+                })
+            elif "comment" in entry:
+                c = entry["comment"]
+                items.append({
+                    "kind": "comment",
+                    **{k: c[k] for k in _ACTIVITY_COMMENT_KEYS if k in c},
+                })
+        return _json(items)
     except EdAPIError as e:
         return f"Error: {e.message}"
 
