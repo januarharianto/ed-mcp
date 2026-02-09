@@ -399,14 +399,22 @@ async def unendorse_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def list_users(course_id: int) -> str:
-    """List users enrolled in a course.
+    """List users enrolled in a course (compact: id, name, role).
 
     Args:
         course_id: The course ID.
     """
     try:
         result = await _get_client().list_users(course_id)
-        return _json(result)
+        users = [
+            {
+                "id": u.get("id"),
+                "name": u.get("name"),
+                "course_role": u.get("course_role", u.get("role", "")),
+            }
+            for u in result.get("users", [])
+        ]
+        return _json(users)
     except EdAPIError as e:
         return f"Error: {e.message}"
 
