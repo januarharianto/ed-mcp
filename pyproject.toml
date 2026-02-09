@@ -1,6 +1,6 @@
 [project]
 name = "edstem-mcp"
-version = "0.1.0"
+dynamic = ["version"]
 description = "MCP server for Ed Discussion (edstem.org)"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,5 +12,20 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/edstem_mcp/__about__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/edstem_mcp"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = ["src/edstem_mcp/__about__.py:__version__"]
+update_changelog_on_bump = true
+tag_format = "v$version"
+
+[dependency-groups]
+dev = [
+    "commitizen>=4.13.6",
+]
