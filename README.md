@@ -12,7 +12,7 @@ cd ed-mcp
 uv sync
 ```
 
-Then grab an API token from your [Ed settings page](https://edstem.org/us/settings/api-tokens).
+Then grab an API token from your [Ed settings page](https://edstem.org/settings/api-tokens).
 
 ## Configure with Claude Code
 
