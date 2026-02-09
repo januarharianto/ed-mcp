@@ -30,7 +30,7 @@ Hopefully a clear description will give you the response that you want.
 
 ### 1. Install prerequisites
 
-You'll need two things installed on your computer:
+You will need two things installed on your computer:
 
 - **Python 3.11 or newer** -- check with `python3 --version` in your terminal. If you don't have it, download it from [python.org](https://www.python.org/downloads/).
 - **uv** (a Python package manager) -- install it by running this in your terminal:
@@ -53,14 +53,11 @@ uv sync
 
 ### 3. Get your Ed API token
 
-Go to your [Ed settings page](https://edstem.org/settings/api-tokens), create a new token, and copy it. Keep it somewhere safe -- you'll need it next.
+Go to your [Ed settings page](https://edstem.org/settings/api-tokens), create a new token, and copy it.
 
-### 4. Connect to Claude
+### 4. Integrate with Claude Desktop
 
-How you connect depends on which Claude app you're using.
-
-
-#### Claude Desktop
+The following instructions are specific to Claude Desktop. If you're using a different MCP-compatible client, refer to its documentation.
 
 Open your Claude Desktop config file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
