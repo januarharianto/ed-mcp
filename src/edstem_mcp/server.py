@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -138,6 +139,63 @@ async def list_courses() -> str:
             for c in result.get("courses", [])
         ]
         return _json(courses)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def get_course_stats(course_id: int) -> str:
+    """Get a quick course overview: enrollment, unanswered questions, unresolved threads, and top categories.
+
+    Makes concurrent API calls for efficiency.
+
+    Args:
+        course_id: The course ID.
+    """
+    try:
+        client = _get_client()
+
+        async def _count_filtered(filt: str) -> int:
+            """Page through a filter and return the total count."""
+            total = 0
+            offset = 0
+            while True:
+                r = await client.list_threads(
+                    course_id, limit=100, offset=offset, filter=filt
+                )
+                batch = r.get("threads", [])
+                total += len(batch)
+                if len(batch) < 100:
+                    break
+                offset += 100
+            return total
+
+        stats_task = client.get_course_stats(course_id)
+        unanswered_task = _count_filtered("unanswered")
+        unresolved_task = _count_filtered("unresolved")
+        recent_task = client.list_threads(course_id, limit=100, offset=0)
+
+        stats, unanswered, unresolved, recent = await asyncio.gather(
+            stats_task, unanswered_task, unresolved_task, recent_task
+        )
+
+        # Category distribution from recent threads
+        cat_counts: dict[str, int] = {}
+        for t in recent.get("threads", []):
+            cat = t.get("category", "") or "Uncategorised"
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        top_categories = sorted(cat_counts.items(), key=lambda x: -x[1])
+
+        enrollment = stats.get("stats", {}).get("student_enrollment_count", 0)
+
+        return _json({
+            "enrollment": enrollment,
+            "unanswered": unanswered,
+            "unresolved": unresolved,
+            "top_categories": [
+                {"name": name, "count": count} for name, count in top_categories
+            ],
+        })
     except EdAPIError as e:
         return f"Error: {e.message}"
 
