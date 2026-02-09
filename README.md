@@ -1,4 +1,4 @@
-# An Ed MCP server
+# An EdStem MCP server
 
 Talk to [Ed Discussion](https://edstem.org) boards using plain English. This tool connects LLMs that can use MCPs (e.g. Claude) to Ed so you can browse threads, reply to students, check what needs attention and more.
 
