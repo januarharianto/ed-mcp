@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Async HTTP client with Bearer token auth
 - Compact thread summaries for context efficiency
 
+## v0.3.0 (2026-02-10)
+
+### Feat
+
+- add bulk_recategorise tool
+- add get_course_stats tool
+- add list_categories tool
+- add mark_duplicate and unmark_duplicate tools
+
 ## v0.2.0 (2026-02-10)
 
 ### Feat
