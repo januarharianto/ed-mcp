@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Async HTTP client with Bearer token auth
 - Compact thread summaries for context efficiency
 
+## v0.3.1 (2026-02-10)
+
+### Fix
+
+- remove US-specific locale from documentation URLs
+
+### Refactor
+
+- improve tool descriptions for natural language discovery
+
 ## v0.3.0 (2026-02-10)
 
 ### Feat
