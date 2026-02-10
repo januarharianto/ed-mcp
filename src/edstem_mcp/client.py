@@ -315,7 +315,7 @@ class EdClient:
         *,
         limit: int = 30,
         offset: int = 0,
-        filter: str | None = None,
+        filter: str = "all",
     ) -> dict[str, Any]:
         """Get a user's activity in a course."""
         return await self._get(

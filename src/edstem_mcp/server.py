@@ -701,8 +701,14 @@ async def list_users(
         return f"Error: {e.message}"
 
 
-_ACTIVITY_THREAD_KEYS = {"id", "number", "type", "title", "category", "created_at"}
-_ACTIVITY_COMMENT_KEYS = {"id", "type", "thread_id", "created_at"}
+_ACTIVITY_THREAD_KEYS = {
+    "id", "type", "course_id", "title", "category", "subcategory",
+    "document", "created_at",
+}
+_ACTIVITY_COMMENT_KEYS = {
+    "id", "type", "thread_id", "thread_title", "thread_category",
+    "document", "created_at",
+}
 
 
 @mcp.tool()
@@ -711,7 +717,7 @@ async def get_user_activity(
     course_id: int,
     limit: int = 30,
     offset: int = 0,
-    filter: str | None = None,
+    filter: str = "all",
 ) -> str:
     """See what a specific user has been posting and commenting in a course. Use list_users first to find the user_id.
 
@@ -720,25 +726,25 @@ async def get_user_activity(
         course_id: The course ID (use list_courses to find it).
         limit: Max entries to return (default 30).
         offset: Pagination offset (use with limit to page through results).
-        filter: Narrow results — "thread" for threads only, "answer" for answers only, "comment" for comments only, or "all" for everything.
+        filter: Narrow results — "thread" for threads only, "answer" for answers only, "comment" for comments only, or "all" for everything (default).
     """
     try:
         result = await _get_client().get_user_activity(
             user_id, course_id, limit=limit, offset=offset, filter=filter
         )
         items = []
-        for entry in result.get("activity", []):
-            if "thread" in entry:
-                t = entry["thread"]
+        for entry in result.get("items", []):
+            kind = entry.get("type", "")
+            value = entry.get("value", {})
+            if kind == "thread":
                 items.append({
                     "kind": "thread",
-                    **{k: t[k] for k in _ACTIVITY_THREAD_KEYS if k in t},
+                    **{k: value[k] for k in _ACTIVITY_THREAD_KEYS if k in value},
                 })
-            elif "comment" in entry:
-                c = entry["comment"]
+            elif kind in ("comment", "answer"):
                 items.append({
-                    "kind": "comment",
-                    **{k: c[k] for k in _ACTIVITY_COMMENT_KEYS if k in c},
+                    "kind": kind,
+                    **{k: value[k] for k in _ACTIVITY_COMMENT_KEYS if k in value},
                 })
         return _json(items)
     except EdAPIError as e:
