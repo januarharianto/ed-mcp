@@ -99,6 +99,8 @@ _COMMENT_KEYS = {
 
 _USER_KEYS = {"id", "name", "course_role"}
 
+_UPLOAD_KEYS = {"url", "filename"}
+
 
 def _trim_comment(c: dict) -> dict:
     """Strip a comment/answer to essential fields, recursing into replies."""
@@ -776,7 +778,7 @@ async def upload_file(file_path: str) -> str:
         if not p.exists():
             return f"Error: File not found: {file_path}"
         result = await _get_client().upload_file(p)
-        return _json(result)
+        return _json({k: result[k] for k in _UPLOAD_KEYS if k in result})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
