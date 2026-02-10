@@ -55,14 +55,14 @@ def _summarise_threads(threads: list[dict]) -> list[dict]:
 # Keys kept in full thread detail responses (get_thread / get_course_thread).
 _THREAD_DETAIL_KEYS = {
     "id", "number", "type", "title", "content", "category", "subcategory",
-    "course_id", "user_id", "accepted_id", "duplicate_id",
+    "course_id", "accepted_id", "duplicate_id",
     "created_at", "is_pinned", "is_private", "is_endorsed",
     "is_answered", "is_locked", "is_anonymous",
     "reply_count", "vote_count", "unresolved_count",
 }
 
 _COMMENT_KEYS = {
-    "id", "user_id", "parent_id", "type", "content",
+    "id", "parent_id", "type", "content",
     "is_endorsed", "is_private", "is_resolved", "is_anonymous",
     "vote_count", "created_at",
 }
