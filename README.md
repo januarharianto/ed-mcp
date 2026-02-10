@@ -43,7 +43,28 @@ You will need two things installed on your computer:
 
 Go to your [Ed settings page](https://edstem.org/settings/api-tokens), create a new token, and copy it.
 
-### 3. Integrate with Claude Desktop
+### 3. Download the code
+
+Go to the [GitHub repository](https://github.com/januarharianto/ed-mcp) and click the green **Code** button, then **Download ZIP**. Extract it somewhere on your computer (e.g. your Desktop or Documents folder).
+
+If you have [git](https://git-scm.com/downloads) installed, you can clone it instead:
+
+```bash
+git clone https://github.com/januarharianto/ed-mcp.git
+```
+
+### 4. Install dependencies
+
+Open a terminal, navigate to the folder you just downloaded/extracted, and run:
+
+```bash
+cd /path/to/ed-mcp
+uv sync
+```
+
+Replace `/path/to/ed-mcp` with the actual folder path.
+
+### 5. Integrate with Claude Desktop
 
 The following instructions are specific to Claude Desktop. If you're using a different MCP-compatible client, refer to its documentation.
 
@@ -54,35 +75,6 @@ Open your Claude Desktop config file:
 Add this inside the `"mcpServers"` section (create the file if it doesn't exist).
 
 > **Important:** Claude Desktop does not inherit your shell's `PATH`, so you must use the full path to `uv`. Find it by running `which uv` (macOS/Linux) or `where uv` (Windows) in your terminal.
-
-#### Option A: Direct from GitHub (no clone needed)
-
-```json
-{
-  "mcpServers": {
-    "edstem": {
-      "command": "/full/path/to/uv",
-      "args": [
-        "run", "--with", "git+https://github.com/januarharianto/ed-mcp.git",
-        "python", "-m", "edstem_mcp.server"
-      ],
-      "env": {
-        "ED_API_TOKEN": "your_token_here"
-      }
-    }
-  }
-}
-```
-
-#### Option B: Clone first (useful if you want to modify the code)
-
-```bash
-git clone https://github.com/januarharianto/ed-mcp.git
-cd ed-mcp
-uv sync
-```
-
-Then add to your config:
 
 ```json
 {
@@ -98,11 +90,11 @@ Then add to your config:
 }
 ```
 
-Replace `/path/to/ed-mcp` with the actual folder path.
+Replace `/full/path/to/uv` with the output from `which uv` (macOS/Linux) or `where uv` (Windows), and `/path/to/ed-mcp` with the actual folder path.
 
 Restart Claude Desktop after saving the file.
 
-### 5. Test it
+### 6. Test it
 
 Ask Claude: "What courses am I enrolled in on Ed?" If everything is set up correctly, you'll see a list of your courses.
 
