@@ -39,23 +39,11 @@ You will need two things installed on your computer:
   ```
   On Windows, use: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
-### 2. Download and install this project
-
-Open your terminal and run these commands one at a time:
-
-```bash
-git clone https://github.com/januarharianto/ed-mcp.git
-cd ed-mcp
-uv sync
-```
-
- This downloads the project and installs its dependencies. Remember where you put it as you will need the path in the next step.
-
-### 3. Get your Ed API token
+### 2. Get your Ed API token
 
 Go to your [Ed settings page](https://edstem.org/settings/api-tokens), create a new token, and copy it.
 
-### 4. Integrate with Claude Desktop
+### 3. Integrate with Claude Desktop
 
 The following instructions are specific to Claude Desktop. If you're using a different MCP-compatible client, refer to its documentation.
 
@@ -63,13 +51,44 @@ Open your Claude Desktop config file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add this inside the `"mcpServers"` section (create the file if it doesn't exist):
+Add this inside the `"mcpServers"` section (create the file if it doesn't exist).
+
+> **Important:** Claude Desktop does not inherit your shell's `PATH`, so you must use the full path to `uv`. Find it by running `which uv` (macOS/Linux) or `where uv` (Windows) in your terminal.
+
+#### Option A: Direct from GitHub (no clone needed)
 
 ```json
 {
   "mcpServers": {
     "edstem": {
-      "command": "uv",
+      "command": "/full/path/to/uv",
+      "args": [
+        "run", "--with", "git+https://github.com/januarharianto/ed-mcp.git",
+        "python", "-m", "edstem_mcp.server"
+      ],
+      "env": {
+        "ED_API_TOKEN": "your_token_here"
+      }
+    }
+  }
+}
+```
+
+#### Option B: Clone first (useful if you want to modify the code)
+
+```bash
+git clone https://github.com/januarharianto/ed-mcp.git
+cd ed-mcp
+uv sync
+```
+
+Then add to your config:
+
+```json
+{
+  "mcpServers": {
+    "edstem": {
+      "command": "/full/path/to/uv",
       "args": ["run", "--directory", "/path/to/ed-mcp", "python", "-m", "edstem_mcp.server"],
       "env": {
         "ED_API_TOKEN": "your_token_here"
@@ -79,7 +98,7 @@ Add this inside the `"mcpServers"` section (create the file if it doesn't exist)
 }
 ```
 
-Replace `/path/to/ed-mcp` with the actual folder path from step 2, and `your_token_here` with your API token from step 3.
+Replace `/path/to/ed-mcp` with the actual folder path.
 
 Restart Claude Desktop after saving the file.
 
@@ -98,7 +117,8 @@ For developers and anyone curious about what's available under the hood:
 - **`get_user`** -- Your profile info.
 - **`list_courses`** -- All enrolled courses.
 - **`get_course_stats`** -- Quick overview: enrollment, unanswered/unresolved counts, top categories.
-- **`list_users`** -- Students and staff in a course.
+- **`get_enrollment_counts`** -- Headcount by role (students, staff, admins).
+- **`list_users`** -- Students and staff in a course (with role filtering and pagination).
 - **`get_user_activity`** -- A user's thread and comment history.
 
 ### Threads
