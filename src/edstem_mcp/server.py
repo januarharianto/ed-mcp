@@ -619,26 +619,58 @@ async def unendorse_thread(thread_id: int) -> str:
 
 
 @mcp.tool()
-async def list_users(course_id: int) -> str:
-    """List all students and staff enrolled in a course. Use this to find a user_id before calling get_user_activity.
+async def get_enrollment_counts(course_id: int) -> str:
+    """Get a quick headcount of students, staff, and admins in a course. Use this to answer "how many students" questions without loading the full user list.
 
     Args:
         course_id: The course ID (use list_courses to find it).
     """
     try:
         result = await _get_client().list_users(course_id)
+        counts: dict[str, int] = {}
+        for u in result.get("users", []):
+            role = u.get("course_role", u.get("role", "unknown"))
+            counts[role] = counts.get(role, 0) + 1
+        counts["total"] = sum(counts.values())
+        return _json(counts)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def list_users(
+    course_id: int,
+    role: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """List enrolled users in a course. Use get_enrollment_counts for a quick headcount. Use this when you need names or user IDs (e.g. before calling get_user_activity).
+
+    Args:
+        course_id: The course ID (use list_courses to find it).
+        role: Filter by role — "student", "staff", or "admin". Omit for all roles.
+        limit: Max users to return (default 50).
+        offset: Pagination offset (use with limit to page through results).
+    """
+    try:
+        result = await _get_client().list_users(course_id)
         strip_pii = _pii_enabled()
         users = []
         for u in result.get("users", []):
+            u_role = u.get("course_role", u.get("role", ""))
+            if role and u_role != role:
+                continue
             entry: dict = {
                 "id": u.get("user_id", u.get("id")),
                 "name": u.get("name"),
-                "course_role": u.get("course_role", u.get("role", "")),
+                "course_role": u_role,
             }
             if not strip_pii:
                 entry["email"] = u.get("email")
             users.append(entry)
-        return _json(users)
+        total = len(users)
+        page = users[offset:offset + limit]
+        return _json({"users": page, "total": total, "offset": offset, "limit": limit})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
