@@ -469,7 +469,12 @@ async def create_thread(
             is_anonymous=is_anonymous,
         )
         t = result.get("thread", result)
-        return _json({"id": t.get("id"), "number": t.get("number"), "title": t.get("title")})
+        return _json({
+            "id": t.get("id"),
+            "number": t.get("number"),
+            "title": t.get("title"),
+            "url": _thread_url(course_id, t["id"]),
+        })
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -500,7 +505,10 @@ async def edit_thread(
             subcategory=subcategory,
         )
         t = result.get("thread", result)
-        return _json({"id": t.get("id"), "number": t.get("number"), "title": t.get("title")})
+        resp: dict = {"id": t.get("id"), "number": t.get("number"), "title": t.get("title")}
+        if t.get("course_id") and t.get("id"):
+            resp["url"] = _thread_url(t["course_id"], t["id"])
+        return _json(resp)
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -807,7 +815,10 @@ async def reply_to_thread(
             parent_id=parent_id,
         )
         c = result.get("comment", result)
-        return _json({"id": c.get("id"), "thread_id": c.get("thread_id"), "type": c.get("type")})
+        resp: dict = {"id": c.get("id"), "thread_id": c.get("thread_id"), "type": c.get("type")}
+        if c.get("course_id"):
+            resp["url"] = _thread_url(c["course_id"], c.get("thread_id", thread_id))
+        return _json(resp)
     except EdAPIError as e:
         return f"Error: {e.message}"
 
