@@ -6,6 +6,9 @@ import json
 
 from edstem_mcp.client import EdAPIError
 from edstem_mcp.server import (
+    _pii_enabled,
+    _scrub_emails,
+    _strip_user_pii,
     _summarise_threads,
     _trim_comment,
     _trim_thread_detail,
@@ -136,9 +139,10 @@ async def test_get_user(mock_client):
         "courses": [{"course": {"id": 10}}],
     }
     result = _parse(await get_user())
-    assert result["id"] == 1
+    assert result["name"] == "Alice"
     assert result["course_count"] == 1
-    assert set(result.keys()) == {"id", "name", "email", "role", "course_count"}
+    # PII stripped by default — no id or email
+    assert set(result.keys()) == {"name", "role", "course_count"}
 
 
 async def test_list_courses(mock_client):
@@ -480,4 +484,176 @@ async def test_output_is_compact_json(mock_client):
     }
     result = await get_user()
     # Compact JSON has no spaces after separators
-    assert " " not in result.replace("Alice", "X").replace("a@b.com", "X")
+    assert " " not in result.replace("Alice", "X")
+
+
+# ------------------------------------------------------------------
+# PII stripping
+# ------------------------------------------------------------------
+
+
+def test_pii_enabled_default():
+    """PII stripping is ON when ED_STRIP_PII is unset."""
+    assert _pii_enabled() is True
+
+
+def test_pii_enabled_explicit_false(monkeypatch):
+    monkeypatch.setenv("ED_STRIP_PII", "false")
+    assert _pii_enabled() is False
+
+
+def test_pii_enabled_case_insensitive(monkeypatch):
+    monkeypatch.setenv("ED_STRIP_PII", "False")
+    assert _pii_enabled() is False
+
+
+def test_pii_enabled_other_values(monkeypatch):
+    for val in ("true", "1", "yes", ""):
+        monkeypatch.setenv("ED_STRIP_PII", val)
+        assert _pii_enabled() is True
+
+
+def test_scrub_emails():
+    assert _scrub_emails("Contact alice@uni.edu.au for help") == "Contact [email] for help"
+    assert _scrub_emails("No emails here") == "No emails here"
+    assert _scrub_emails("a@b.com and c@d.org") == "[email] and [email]"
+
+
+def test_strip_user_pii():
+    user = {"id": 1, "name": "Alice", "course_role": "student", "email": "a@b.com", "avatar": "url"}
+    result = _strip_user_pii(user)
+    assert result == {"name": "Alice", "course_role": "student"}
+
+
+def test_strip_user_pii_minimal():
+    """Works when only name is present."""
+    assert _strip_user_pii({"name": "Bob"}) == {"name": "Bob"}
+
+
+def test_trim_comment_pii_scrubs_email_from_content():
+    comment = {
+        "id": 1, "parent_id": None, "type": "comment",
+        "content": "<doc>Email alice@uni.edu</doc>",
+        "is_endorsed": False, "is_private": False,
+        "is_resolved": False, "is_anonymous": False,
+        "vote_count": 0, "created_at": "2025-01-01",
+        "user": {"id": 1, "name": "Alice", "course_role": "student", "email": "a@b.com"},
+    }
+    result = _trim_comment(comment)
+    assert "[email]" in result["content"]
+    assert "alice@uni.edu" not in result["content"]
+    assert "id" not in result["user"]
+    assert "email" not in result["user"]
+    assert result["user"]["name"] == "Alice"
+
+
+def test_trim_comment_pii_disabled_keeps_user_id(monkeypatch):
+    monkeypatch.setenv("ED_STRIP_PII", "false")
+    comment = {
+        "id": 1, "parent_id": None, "type": "comment",
+        "content": "<doc>Email alice@uni.edu</doc>",
+        "is_endorsed": False, "is_private": False,
+        "is_resolved": False, "is_anonymous": False,
+        "vote_count": 0, "created_at": "2025-01-01",
+        "user": {"id": 1, "name": "Alice", "course_role": "student"},
+    }
+    result = _trim_comment(comment)
+    # Email not scrubbed when PII disabled
+    assert "alice@uni.edu" in result["content"]
+    # User id preserved
+    assert result["user"]["id"] == 1
+
+
+def test_trim_thread_detail_pii_strips_users():
+    data = {
+        "thread": {
+            "id": 1, "number": 42, "type": "post", "title": "Hello",
+            "content": "<doc>Contact bob@school.com</doc>",
+            "category": "General", "subcategory": "",
+            "course_id": 10, "accepted_id": None, "duplicate_id": None,
+            "created_at": "2025-01-01", "is_pinned": False, "is_private": False,
+            "is_endorsed": False, "is_answered": False, "is_locked": False,
+            "is_anonymous": False, "reply_count": 0, "vote_count": 0,
+            "unresolved_count": 0,
+            "user": {"id": 5, "name": "Alice", "course_role": "admin", "email": "a@b.com"},
+            "answers": [], "comments": [],
+        },
+        "users": [
+            {"id": 5, "name": "Alice", "course_role": "admin", "avatar": "url", "email": "a@b.com"},
+        ],
+    }
+    result = _trim_thread_detail(data)
+    # Thread user stripped
+    assert "id" not in result["user"]
+    assert "email" not in result["user"]
+    assert result["user"]["name"] == "Alice"
+    # Participants list stripped
+    assert "id" not in result["users"][0]
+    assert "email" not in result["users"][0]
+    assert "avatar" not in result["users"][0]
+    # Email in content scrubbed
+    assert "bob@school.com" not in result["content"]
+    assert "[email]" in result["content"]
+
+
+def test_trim_thread_detail_pii_disabled_preserves_all(monkeypatch):
+    monkeypatch.setenv("ED_STRIP_PII", "false")
+    data = {
+        "thread": {
+            "id": 1, "number": 42, "type": "post", "title": "Hello",
+            "content": "<doc>Contact bob@school.com</doc>",
+            "category": "General", "subcategory": "",
+            "course_id": 10, "accepted_id": None, "duplicate_id": None,
+            "created_at": "2025-01-01", "is_pinned": False, "is_private": False,
+            "is_endorsed": False, "is_answered": False, "is_locked": False,
+            "is_anonymous": False, "reply_count": 0, "vote_count": 0,
+            "unresolved_count": 0,
+            "user": {"id": 5, "name": "Alice", "course_role": "admin"},
+            "answers": [], "comments": [],
+        },
+        "users": [
+            {"id": 5, "name": "Alice", "course_role": "admin"},
+        ],
+    }
+    result = _trim_thread_detail(data)
+    assert result["user"]["id"] == 5
+    assert result["users"][0]["id"] == 5
+    assert "bob@school.com" in result["content"]
+
+
+async def test_get_user_pii_disabled(mock_client, monkeypatch):
+    monkeypatch.setenv("ED_STRIP_PII", "false")
+    mock_client.get_user.return_value = {
+        "user": {"id": 1, "name": "Alice", "email": "a@b.com", "role": "admin"},
+        "courses": [{"course": {"id": 10}}],
+    }
+    result = _parse(await get_user())
+    assert result["id"] == 1
+    assert result["email"] == "a@b.com"
+    assert set(result.keys()) == {"id", "name", "email", "role", "course_count"}
+
+
+async def test_list_users_pii_maps_user_id(mock_client):
+    """API returns user_id; server maps it to id for tool chaining."""
+    mock_client.list_users.return_value = {
+        "users": [
+            {"user_id": 42, "name": "Alice", "course_role": "student", "email": "a@b.com"},
+        ],
+    }
+    result = _parse(await list_users(1))
+    assert result[0]["id"] == 42
+    assert "email" not in result[0]
+    assert set(result[0].keys()) == {"id", "name", "course_role"}
+
+
+async def test_list_users_pii_disabled(mock_client, monkeypatch):
+    monkeypatch.setenv("ED_STRIP_PII", "false")
+    mock_client.list_users.return_value = {
+        "users": [
+            {"user_id": 42, "name": "Alice", "course_role": "student", "email": "a@b.com"},
+        ],
+    }
+    result = _parse(await list_users(1))
+    assert result[0]["id"] == 42
+    assert result[0]["email"] == "a@b.com"
+    assert set(result[0].keys()) == {"id", "name", "course_role", "email"}

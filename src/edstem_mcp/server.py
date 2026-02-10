@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -30,6 +31,28 @@ def _get_client() -> EdClient:
 def _json(data: dict) -> str:
     """Compact JSON serialisation for tool responses."""
     return json.dumps(data, separators=(",", ":"), default=str)
+
+
+# ------------------------------------------------------------------
+# PII helpers
+# ------------------------------------------------------------------
+
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
+
+
+def _pii_enabled() -> bool:
+    """Return True unless ED_STRIP_PII is explicitly 'false'."""
+    return os.environ.get("ED_STRIP_PII", "").lower() != "false"
+
+
+def _scrub_emails(text: str) -> str:
+    """Replace email addresses in text with [email]."""
+    return _EMAIL_RE.sub("[email]", text)
+
+
+def _strip_user_pii(user: dict) -> dict:
+    """Keep only name and course_role from a user dict."""
+    return {k: user[k] for k in ("name", "course_role") if k in user}
 
 
 # Keys kept in thread summaries (list/search). Full content via get_thread.
@@ -73,8 +96,14 @@ _USER_KEYS = {"id", "name", "course_role"}
 def _trim_comment(c: dict) -> dict:
     """Strip a comment/answer to essential fields, recursing into replies."""
     trimmed = {k: c[k] for k in _COMMENT_KEYS if k in c}
+    strip_pii = _pii_enabled()
     if c.get("user"):
-        trimmed["user"] = {k: c["user"][k] for k in _USER_KEYS if k in c["user"]}
+        trimmed["user"] = (
+            _strip_user_pii(c["user"]) if strip_pii
+            else {k: c["user"][k] for k in _USER_KEYS if k in c["user"]}
+        )
+    if strip_pii and "content" in trimmed:
+        trimmed["content"] = _scrub_emails(trimmed["content"])
     nested = c.get("comments", [])
     if nested:
         trimmed["comments"] = [_trim_comment(r) for r in nested]
@@ -85,16 +114,24 @@ def _trim_thread_detail(data: dict) -> dict:
     """Trim a full thread API response to essential fields."""
     t = data.get("thread", data)
     trimmed = {k: t[k] for k in _THREAD_DETAIL_KEYS if k in t}
+    strip_pii = _pii_enabled()
     if t.get("user"):
-        trimmed["user"] = {k: t["user"][k] for k in _USER_KEYS if k in t["user"]}
+        trimmed["user"] = (
+            _strip_user_pii(t["user"]) if strip_pii
+            else {k: t["user"][k] for k in _USER_KEYS if k in t["user"]}
+        )
     for key in ("answers", "comments"):
         if t.get(key):
             trimmed[key] = [_trim_comment(c) for c in t[key]]
+    if strip_pii and "content" in trimmed:
+        trimmed["content"] = _scrub_emails(trimmed["content"])
     # Compact users list (participants)
     users = data.get("users", [])
     if users:
         trimmed["users"] = [
-            {k: u[k] for k in _USER_KEYS if k in u} for u in users
+            _strip_user_pii(u) if strip_pii
+            else {k: u[k] for k in _USER_KEYS if k in u}
+            for u in users
         ]
     return trimmed
 
@@ -106,17 +143,18 @@ def _trim_thread_detail(data: dict) -> dict:
 
 @mcp.tool()
 async def get_user() -> str:
-    """Get the authenticated user's profile (name, email, role). Call list_courses instead to see enrolled courses."""
+    """Get the authenticated user's profile (name, role). Call list_courses instead to see enrolled courses."""
     try:
         result = await _get_client().get_user()
         u = result.get("user", result)
-        profile = {
-            "id": u.get("id"),
+        profile: dict = {
             "name": u.get("name"),
-            "email": u.get("email"),
             "role": u.get("role"),
             "course_count": len(result.get("courses", [])),
         }
+        if not _pii_enabled():
+            profile["id"] = u.get("id")
+            profile["email"] = u.get("email")
         return _json(profile)
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -589,14 +627,17 @@ async def list_users(course_id: int) -> str:
     """
     try:
         result = await _get_client().list_users(course_id)
-        users = [
-            {
-                "id": u.get("id"),
+        strip_pii = _pii_enabled()
+        users = []
+        for u in result.get("users", []):
+            entry: dict = {
+                "id": u.get("user_id", u.get("id")),
                 "name": u.get("name"),
                 "course_role": u.get("course_role", u.get("role", "")),
             }
-            for u in result.get("users", [])
-        ]
+            if not strip_pii:
+                entry["email"] = u.get("email")
+            users.append(entry)
         return _json(users)
     except EdAPIError as e:
         return f"Error: {e.message}"

@@ -138,6 +138,7 @@ For developers and anyone curious about what's available under the hood:
 |---|---|---|
 | `ED_API_TOKEN` | Yes | Your Ed Discussion API token |
 | `ED_BASE_URL` | No | API base URL (defaults to `https://edstem.org/api`) |
+| `ED_STRIP_PII` | No | Strip emails, user IDs, avatars from responses (defaults to `true`; set to `false` to include all fields) |
 
 ## License
 
