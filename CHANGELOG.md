@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Async HTTP client with Bearer token auth
 - Compact thread summaries for context efficiency
 
+## v0.4.0 (2026-02-11)
+
+### Feat
+
+- add url field to write tool responses
+- add status, year, and code filters to list_courses
+- add url field to thread responses
+- add get_enrollment_counts tool and paginate list_users
+- strip PII from responses by default
+
+### Fix
+
+- trim upload_file response to url and filename
+- repair get_user_activity response parsing and field keys
+- use thread ID instead of number in get_thread_by_url
+- correct changelog extraction in release workflow
+
+### Refactor
+
+- remove redundant user_id from thread/comment key sets
+
 ## v0.3.1 (2026-02-10)
 
 ### Fix
