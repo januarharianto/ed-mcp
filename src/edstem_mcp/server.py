@@ -170,21 +170,38 @@ async def get_user() -> str:
 
 
 @mcp.tool()
-async def list_courses() -> str:
-    """List all courses the user is enrolled in. Call this first to find a course_id before using other tools. Returns id, code, name, year, session, and status."""
+async def list_courses(
+    status: str | None = None,
+    year: str | None = None,
+    code: str | None = None,
+) -> str:
+    """List courses the user is enrolled in. Call this first to find a course_id before using other tools. Returns id, code, name, year, session, and status.
+
+    Args:
+        status: Filter by status — "active", "archived", or "inactive". Omit for all.
+        year: Filter by year (e.g. "2025"). Omit for all years.
+        code: Filter by course code substring, case-insensitive (e.g. "ENVX"). Omit for all codes.
+    """
     try:
         result = await _get_client().get_user()
-        courses = [
-            {
-                "id": c["course"]["id"],
-                "code": c["course"].get("code", ""),
-                "name": c["course"].get("name", ""),
-                "year": c["course"].get("year", ""),
-                "session": c["course"].get("session", ""),
-                "status": c["course"].get("status", ""),
-            }
-            for c in result.get("courses", [])
-        ]
+        code_upper = code.upper() if code else None
+        courses = []
+        for c in result.get("courses", []):
+            course = c["course"]
+            if status and course.get("status", "") != status:
+                continue
+            if year and course.get("year", "") != year:
+                continue
+            if code_upper and code_upper not in course.get("code", "").upper():
+                continue
+            courses.append({
+                "id": course["id"],
+                "code": course.get("code", ""),
+                "name": course.get("name", ""),
+                "year": course.get("year", ""),
+                "session": course.get("session", ""),
+                "status": course.get("status", ""),
+            })
         return _json(courses)
     except EdAPIError as e:
         return f"Error: {e.message}"
