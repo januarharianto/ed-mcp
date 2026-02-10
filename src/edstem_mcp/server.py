@@ -33,6 +33,12 @@ def _json(data: dict) -> str:
     return json.dumps(data, separators=(",", ":"), default=str)
 
 
+def _thread_url(course_id: int, thread_id: int) -> str:
+    """Build an Ed Discussion URL for a thread."""
+    region = os.environ.get("ED_REGION", "us")
+    return f"https://edstem.org/{region}/courses/{course_id}/discussion/{thread_id}"
+
+
 # ------------------------------------------------------------------
 # PII helpers
 # ------------------------------------------------------------------
@@ -64,12 +70,13 @@ _THREAD_SUMMARY_KEYS = {
 }
 
 
-def _summarise_threads(threads: list[dict]) -> list[dict]:
+def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
     """Extract compact summaries from a list of thread dicts."""
     return [
         {
             **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
             "user": t.get("user", {}).get("name", ""),
+            "url": _thread_url(course_id, t["id"]),
         }
         for t in threads
     ]
@@ -114,6 +121,8 @@ def _trim_thread_detail(data: dict) -> dict:
     """Trim a full thread API response to essential fields."""
     t = data.get("thread", data)
     trimmed = {k: t[k] for k in _THREAD_DETAIL_KEYS if k in t}
+    if "id" in trimmed and "course_id" in trimmed:
+        trimmed["url"] = _thread_url(trimmed["course_id"], trimmed["id"])
     strip_pii = _pii_enabled()
     if t.get("user"):
         trimmed["user"] = (
@@ -290,7 +299,7 @@ async def list_threads(
         result = await _get_client().list_threads(
             course_id, limit=limit, offset=offset, sort=sort, filter=filter
         )
-        return _json({"threads": _summarise_threads(result.get("threads", []))})
+        return _json({"threads": _summarise_threads(result.get("threads", []), course_id)})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -403,7 +412,7 @@ async def search_threads(course_id: int, query: str, limit: int = 20) -> str:
     """
     try:
         result = await _get_client().search_threads(course_id, query, limit=limit)
-        return _json({"threads": _summarise_threads(result.get("threads", []))})
+        return _json({"threads": _summarise_threads(result.get("threads", []), course_id)})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
