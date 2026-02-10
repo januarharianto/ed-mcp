@@ -334,14 +334,14 @@ async def get_thread_by_url(url: str) -> str:
     """Read a thread by pasting its Ed Discussion URL. Use this when someone shares a link to a thread. Returns full content, comments, and answers.
 
     Args:
-        url: Full Ed Discussion thread URL (e.g. https://edstem.org/au/courses/12345/discussion/220).
+        url: Full Ed Discussion thread URL (e.g. https://edstem.org/au/courses/20849/discussion/2785693).
     """
     m = _ED_URL_RE.search(url)
     if not m:
-        return "Error: Could not parse Ed thread URL. Expected format: https://edstem.org/.../courses/{id}/discussion/{number}"
-    course_id, thread_number = int(m.group(1)), int(m.group(2))
+        return "Error: Could not parse Ed thread URL. Expected format: https://edstem.org/.../courses/{course_id}/discussion/{thread_id}"
+    thread_id = int(m.group(2))
     try:
-        result = await _get_client().get_course_thread(course_id, thread_number)
+        result = await _get_client().get_thread(thread_id)
         return _json(_trim_thread_detail(result))
     except EdAPIError as e:
         return f"Error: {e.message}"
