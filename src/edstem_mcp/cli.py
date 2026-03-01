@@ -496,3 +496,415 @@ async def threads_delete(
         raise typer.Exit(1)
     finally:
         await c.close()
+
+
+# ------------------------------------------------------------------
+# Moderation command (consolidated)
+# ------------------------------------------------------------------
+
+
+@threads_app.command("mod")
+@_run_async
+async def threads_mod(
+    thread_id: int = typer.Argument(..., help="Thread ID."),
+    lock: bool = typer.Option(False, "--lock", help="Lock thread."),
+    unlock: bool = typer.Option(False, "--unlock", help="Unlock thread."),
+    pin: bool = typer.Option(False, "--pin", help="Pin thread."),
+    unpin: bool = typer.Option(False, "--unpin", help="Unpin thread."),
+    endorse: bool = typer.Option(False, "--endorse", help="Endorse thread."),
+    unendorse: bool = typer.Option(False, "--unendorse", help="Remove endorsement."),
+    duplicate_of: int | None = typer.Option(None, "--duplicate-of", help="Mark as duplicate of this thread ID."),
+    unmark_duplicate: bool = typer.Option(False, "--unmark-duplicate", help="Remove duplicate mark."),
+    accept: int | None = typer.Option(None, "--accept", help="Accept this comment ID as answer."),
+):
+    """Moderate a thread: lock, pin, endorse, mark duplicate, accept answer."""
+    for a, b, label in [
+        (lock, unlock, "--lock/--unlock"),
+        (pin, unpin, "--pin/--unpin"),
+        (endorse, unendorse, "--endorse/--unendorse"),
+    ]:
+        if a and b:
+            _output({"error": f"{label} are mutually exclusive."})
+            raise typer.Exit(1)
+    if duplicate_of is not None and unmark_duplicate:
+        _output({"error": "--duplicate-of and --unmark-duplicate are mutually exclusive."})
+        raise typer.Exit(1)
+    c = await _client()
+    actions: list[str] = []
+    try:
+        if lock:
+            await c.lock_thread(thread_id)
+            actions.append("locked")
+        if unlock:
+            await c.unlock_thread(thread_id)
+            actions.append("unlocked")
+        if pin:
+            await c.pin_thread(thread_id)
+            actions.append("pinned")
+        if unpin:
+            await c.unpin_thread(thread_id)
+            actions.append("unpinned")
+        if endorse:
+            await c.endorse_thread(thread_id)
+            actions.append("endorsed")
+        if unendorse:
+            await c.unendorse_thread(thread_id)
+            actions.append("unendorsed")
+        if duplicate_of is not None:
+            await c.mark_duplicate(thread_id, duplicate_of)
+            actions.append(f"marked_duplicate_of_{duplicate_of}")
+        if unmark_duplicate:
+            await c.unmark_duplicate(thread_id)
+            actions.append("unmarked_duplicate")
+        if accept is not None:
+            await c.accept_answer(thread_id, accept)
+            actions.append(f"accepted_{accept}")
+        if not actions:
+            _output({"error": "No moderation flags provided."})
+            raise typer.Exit(1)
+        _output({"thread_id": thread_id, "actions": actions})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@threads_app.command("recategorise")
+@_run_async
+async def threads_recategorise(
+    thread_ids: list[int] = typer.Argument(..., help="Thread IDs to move."),
+    category: str = typer.Option(..., "--category", help="Target category."),
+    subcategory: str = typer.Option("", "--subcategory", help="Target subcategory."),
+):
+    """Move threads to a new category."""
+    c = await _client()
+    try:
+        results = []
+        for tid in thread_ids:
+            try:
+                await c.edit_thread(tid, category=category, subcategory=subcategory)
+                results.append({"id": tid, "ok": True})
+            except EdAPIError as e:
+                results.append({"id": tid, "ok": False, "error": e.message})
+        succeeded = sum(1 for r in results if r["ok"])
+        failed = [r for r in results if not r["ok"]]
+        summary: dict = {"updated": succeeded, "total": len(thread_ids)}
+        if failed:
+            summary["failed"] = failed
+        _output(summary)
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+# ------------------------------------------------------------------
+# Attendance commands
+# ------------------------------------------------------------------
+
+
+@attendance_app.command("list")
+@_run_async
+async def attendance_list(
+    course: int | None = typer.Option(None, "--course", help="Course ID."),
+):
+    """List attendance sessions."""
+    from edstem_mcp._helpers import _EVENT_SUMMARY_KEYS
+    course_id = _require_course(course)
+    c = await _client()
+    try:
+        result = await c.list_attendance_sessions(course_id)
+        sessions = [
+            {k: e[k] for k in _EVENT_SUMMARY_KEYS if k in e}
+            for e in result.get("events", [])
+        ]
+        _output({"sessions": sessions})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@attendance_app.command("get")
+@_run_async
+async def attendance_get(
+    event_id: int = typer.Argument(..., help="Session ID."),
+):
+    """Get full session detail including check-ins."""
+    from edstem_mcp._helpers import _EVENT_DETAIL_KEYS, _CHECK_IN_KEYS
+    c = await _client()
+    try:
+        event_data = await c.get_attendance_session(event_id)
+        checkins_data = await c.list_check_ins(event_id=event_id)
+        ev = event_data.get("event", event_data)
+        session = {k: ev[k] for k in _EVENT_DETAIL_KEYS if k in ev}
+        session["check_ins"] = [
+            {k: ci[k] for k in _CHECK_IN_KEYS if k in ci}
+            for ci in checkins_data.get("check_ins", [])
+        ]
+        _output(session)
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@attendance_app.command("create")
+@_run_async
+async def attendance_create(
+    title: str = typer.Option(..., "--title", help="Session title."),
+    course: int | None = typer.Option(None, "--course", help="Course ID."),
+    start: str | None = typer.Option(None, "--start", help="Start time in ISO 8601."),
+    hidden: bool = typer.Option(False, "--hidden", help="Hide from students."),
+):
+    """Create a new attendance session."""
+    course_id = _require_course(course)
+    c = await _client()
+    try:
+        result = await c.create_attendance_session(course_id, title=title, start=start, is_hidden=hidden)
+        ev = result.get("event", result)
+        _output({"id": ev.get("id"), "title": ev.get("title")})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@attendance_app.command("update")
+@_run_async
+async def attendance_update(
+    event_id: int = typer.Argument(..., help="Session ID."),
+    title: str | None = typer.Option(None, "--title", help="New title."),
+    closed: bool | None = typer.Option(None, "--closed/--no-closed", help="Close or reopen."),
+    hidden: bool | None = typer.Option(None, "--hidden/--no-hidden", help="Hide or show."),
+):
+    """Update an attendance session."""
+    c = await _client()
+    try:
+        fields: dict = {}
+        if title is not None:
+            fields["title"] = title
+        if closed is not None:
+            fields["is_closed"] = closed
+        if hidden is not None:
+            fields["is_hidden"] = hidden
+        if not fields:
+            _output({"error": "No fields to update."})
+            raise typer.Exit(1)
+        result = await c.update_attendance_session(event_id, **fields)
+        ev = result.get("event", result)
+        _output({"id": ev.get("id"), "title": ev.get("title"), "is_closed": ev.get("is_closed")})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@attendance_app.command("delete")
+@_run_async
+async def attendance_delete(
+    event_id: int = typer.Argument(..., help="Session ID."),
+):
+    """Permanently delete an attendance session."""
+    c = await _client()
+    try:
+        await c.delete_attendance_session(event_id)
+        _output({"deleted": True})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@attendance_app.command("check-in")
+@_run_async
+async def attendance_check_in(
+    event_id: int = typer.Argument(..., help="Session ID."),
+    users: str = typer.Option(..., "--users", help="Comma-separated user IDs."),
+    kind: str = typer.Option("present", "--kind", help="present, late, excused, absent."),
+):
+    """Manually check in students."""
+    from edstem_mcp._helpers import _CHECK_IN_KEYS
+    valid_kinds = {"present", "late", "excused", "absent"}
+    if kind not in valid_kinds:
+        _output({"error": f"kind must be one of: {', '.join(sorted(valid_kinds))}"})
+        raise typer.Exit(1)
+    try:
+        user_ids = [int(u.strip()) for u in users.split(",")]
+    except ValueError:
+        _output({"error": "All user IDs must be integers."})
+        raise typer.Exit(1)
+    c = await _client()
+    try:
+        result = await c.manual_check_in(event_id, user_ids=user_ids, kind=kind)
+        check_ins = [
+            {k: ci[k] for k in _CHECK_IN_KEYS if k in ci}
+            for ci in result.get("check_ins", [])
+        ]
+        _output({"checked_in": len(check_ins), "check_ins": check_ins})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@attendance_app.command("undo")
+@_run_async
+async def attendance_undo(
+    event_id: int = typer.Argument(..., help="Session ID."),
+    users: str = typer.Option(..., "--users", help="Comma-separated user IDs."),
+):
+    """Remove check-in records for users."""
+    try:
+        user_ids = [int(u.strip()) for u in users.split(",")]
+    except ValueError:
+        _output({"error": "All user IDs must be integers."})
+        raise typer.Exit(1)
+    c = await _client()
+    try:
+        await c.undo_check_in(event_id, user_ids=user_ids)
+        _output({"event_id": event_id, "removed": len(user_ids)})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@attendance_app.command("analytics")
+@_run_async
+async def attendance_analytics(
+    course: int | None = typer.Option(None, "--course", help="Course ID."),
+):
+    """Get combined attendance report for a course."""
+    from edstem_mcp._helpers import _EVENT_SUMMARY_KEYS, _CHECK_IN_KEYS
+    course_id = _require_course(course)
+    c = await _client()
+    try:
+        result = await c.get_attendance_analytics(course_id)
+        sessions = [
+            {k: e[k] for k in _EVENT_SUMMARY_KEYS if k in e}
+            for e in result.get("events", [])
+        ]
+        check_ins = [
+            {k: ci[k] for k in _CHECK_IN_KEYS if k in ci}
+            for ci in result.get("check_ins", [])
+        ]
+        _output({"sessions": sessions, "check_ins": check_ins})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+# ------------------------------------------------------------------
+# Comment commands
+# ------------------------------------------------------------------
+
+
+@comments_app.command("edit")
+@_run_async
+async def comments_edit(
+    comment_id: int = typer.Argument(..., help="Comment ID."),
+    content: str = typer.Option(..., "--content", help="New body in Ed XML."),
+):
+    """Edit a comment's content."""
+    c = await _client()
+    try:
+        result = await c.edit_comment(comment_id, content=content)
+        cm = result.get("comment", result)
+        _output({"id": cm.get("id"), "thread_id": cm.get("thread_id")})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+@comments_app.command("delete")
+@_run_async
+async def comments_delete(
+    comment_id: int = typer.Argument(..., help="Comment ID."),
+):
+    """Permanently delete a comment."""
+    c = await _client()
+    try:
+        await c.delete_comment(comment_id)
+        _output({"deleted": True})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+# ------------------------------------------------------------------
+# User commands
+# ------------------------------------------------------------------
+
+
+@users_app.command("activity")
+@_run_async
+async def users_activity(
+    user_id: int = typer.Argument(..., help="User ID (from courses users)."),
+    course: int | None = typer.Option(None, "--course", help="Course ID."),
+    filter: str = typer.Option("all", help="thread, answer, comment, or all."),
+    limit: int = typer.Option(30, help="Max entries."),
+    offset: int = typer.Option(0, help="Pagination offset."),
+):
+    """View a user's activity in a course."""
+    from edstem_mcp._helpers import _ACTIVITY_THREAD_KEYS, _ACTIVITY_COMMENT_KEYS
+    course_id = _require_course(course)
+    c = await _client()
+    try:
+        result = await c.get_user_activity(user_id, course_id, limit=limit, offset=offset, filter=filter)
+        items = []
+        for entry in result.get("items", []):
+            kind = entry.get("type", "")
+            value = entry.get("value", {})
+            if kind == "thread":
+                items.append({"kind": "thread", **{k: value[k] for k in _ACTIVITY_THREAD_KEYS if k in value}})
+            elif kind in ("comment", "answer"):
+                items.append({"kind": kind, **{k: value[k] for k in _ACTIVITY_COMMENT_KEYS if k in value}})
+        _output(items)
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
+
+
+# ------------------------------------------------------------------
+# File commands
+# ------------------------------------------------------------------
+
+
+@files_app.command("upload")
+@_run_async
+async def files_upload(
+    file_path: str = typer.Argument(..., help="Path to file."),
+):
+    """Upload a file to Ed Discussion."""
+    from edstem_mcp._helpers import _UPLOAD_KEYS
+    p = Path(file_path)
+    if not p.exists():
+        _output({"error": f"File not found: {file_path}"})
+        raise typer.Exit(1)
+    c = await _client()
+    try:
+        result = await c.upload_file(p)
+        _output({k: result[k] for k in _UPLOAD_KEYS if k in result})
+    except EdAPIError as e:
+        _output({"error": e.message})
+        raise typer.Exit(1)
+    finally:
+        await c.close()
