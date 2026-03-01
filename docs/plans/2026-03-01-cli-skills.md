@@ -187,13 +187,12 @@ def _trim_thread_detail(data: dict) -> dict:
 
 **Step 2: Update `server.py` to import from `_helpers.py`**
 
-Replace the moved code (lines 31–164 and lines 731–738) with imports. Delete all the moved functions, constants, and the `import re` that's now only needed in `_helpers.py`. Add at the top of `server.py` (after the existing imports):
+Replace the moved code (lines 31–164 and lines 731–738) with imports. Delete all the moved functions and constants. **Keep `import re` in `server.py`** — it's still needed for `_ED_URL_RE` (line 372). Delete `import os` from `server.py` — it's no longer used directly (only in the moved helpers). Add at the top of `server.py` (after the existing imports):
 
 ```python
 from edstem_mcp._helpers import (
     _json,
     _thread_url,
-    _EMAIL_RE,
     _pii_enabled,
     _scrub_emails,
     _strip_user_pii,
@@ -213,7 +212,7 @@ from edstem_mcp._helpers import (
 )
 ```
 
-Keep in `server.py`: the `FastMCP` setup, `_get_client`, `_ED_URL_RE`, and all `@mcp.tool()` functions.
+Keep in `server.py`: the `FastMCP` setup, `_get_client`, `_ED_URL_RE` (needs `import re`), and all `@mcp.tool()` functions.
 
 **Step 3: Verify nothing is broken**
 
@@ -221,7 +220,7 @@ Run: `cd "/Users/jhar8696/Sydney Uni Dropbox/Januar Harianto/projects/automation
 Expected: `38 tools`
 
 Run: `cd "/Users/jhar8696/Sydney Uni Dropbox/Januar Harianto/projects/automation/edstem" && uv run pytest tests/ -q`
-Expected: All tests pass (tests import helpers from `server` module — they'll still resolve because `server.py` re-imports them from `_helpers.py`)
+Expected: 70 passed, 7 failed (same as before — the 7 failures are pre-existing test bugs unrelated to this refactor: `test_summarise_threads_keeps_only_summary_keys`, `test_get_thread_by_url_valid`, `test_create_thread`, `test_list_users`, `test_get_user_activity`, `test_list_users_pii_maps_user_id`, `test_list_users_pii_disabled`). Verify no NEW failures are introduced.
 
 **Step 4: Commit**
 
@@ -500,7 +499,6 @@ async def courses_stats(
     course: int | None = typer.Option(None, "--course", help="Course ID (uses saved default)."),
 ):
     """Get course overview: enrollment, unanswered Qs, top categories."""
-    from edstem_mcp._helpers import _pii_enabled
     course_id = _require_course(course)
     c = await _client()
     try:
@@ -1610,7 +1608,7 @@ Run: `cd "/Users/jhar8696/Sydney Uni Dropbox/Januar Harianto/projects/automation
 Expected: `38 tools` (unchanged)
 
 Run: `cd "/Users/jhar8696/Sydney Uni Dropbox/Januar Harianto/projects/automation/edstem" && uv run pytest tests/ -q`
-Expected: All tests pass
+Expected: 70 passed, 7 failed (same pre-existing failures — no new regressions)
 
 **Step 2: Smoke test CLI commands against course 31545**
 
