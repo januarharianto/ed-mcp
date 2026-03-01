@@ -1,6 +1,6 @@
-# An EdStem MCP server
+# ed-mcp
 
-Talk to [Ed Discussion](https://edstem.org) boards using plain English. This tool connects LLMs that can use MCPs (e.g. Claude) to Ed so you can browse threads, reply to students, check what needs attention and more.
+An MCP server and CLI for [Ed Discussion](https://edstem.org). It gives LLMs (and you) access to threads, comments, attendance, moderation, and file uploads through 38 tools. Works with Claude Desktop, Claude Code, or any MCP-compatible client.
 
 ## What can I do with this?
 
@@ -8,7 +8,7 @@ Once set up, you can ask Claude things like:
 
 > "What questions haven't been answered yet in ENVX2001?"
 
-Claude will look up your course, find unanswered questions, and show you a summary. Behind the scenes it uses tools like `list_courses` and `list_threads` from the MCP.
+Claude will look up your course, find unanswered questions, and show you a summary.
 
 Here are some more examples:
 
@@ -23,12 +23,13 @@ Here are some more examples:
 | "Move all the project 2 threads into the Assignments category" | Recategorises multiple threads at once (`bulk_recategorise`) |
 | "What has student Jane Smith been posting about?" | Looks up the student and shows their recent activity (`get_user_activity`) |
 | "This question is a duplicate of #35, mark it" | Marks the thread as a duplicate and links to the original (`mark_duplicate`) |
-
-Hopefully a clear description will give you the response that you want.
+| "Show me today's attendance session" | Lists attendance sessions and their check-ins (`list_attendance_sessions`) |
+| "Mark students 12345 and 67890 as present for the Week 3 tutorial" | Manually checks in students by user ID (`manual_check_in`) |
+| "Give me an attendance report for the whole course" | Returns all sessions and check-ins in one call (`get_attendance_analytics`) |
 
 ## Setup
 
-### 1. Install prerequisites
+### 1. Prerequisites
 
 You will need two things installed on your computer:
 
@@ -43,7 +44,7 @@ You will need two things installed on your computer:
 
 Go to your [Ed settings page](https://edstem.org/settings/api-tokens), create a new token, and copy it.
 
-### 3. Download the code
+### 3. Download and install
 
 Go to the [GitHub repository](https://github.com/januarharianto/ed-mcp) and click the green **Code** button, then **Download ZIP**. Extract it somewhere on your computer (e.g. your Desktop or Documents folder).
 
@@ -53,9 +54,7 @@ If you have [git](https://git-scm.com/downloads) installed, you can clone it ins
 git clone https://github.com/januarharianto/ed-mcp.git
 ```
 
-### 4. Install dependencies
-
-Open a terminal, navigate to the folder you just downloaded/extracted, and run:
+Then open a terminal, navigate to the folder, and install dependencies:
 
 ```bash
 cd /path/to/ed-mcp
@@ -64,9 +63,9 @@ uv sync
 
 Replace `/path/to/ed-mcp` with the actual folder path.
 
-### 5. Integrate with Claude Desktop
+### 4. Connect to Claude
 
-The following instructions are specific to Claude Desktop. If you're using a different MCP-compatible client, refer to its documentation.
+#### Claude Desktop
 
 Open your Claude Desktop config file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -94,15 +93,53 @@ Replace `/full/path/to/uv` with the output from `which uv` (macOS/Linux) or `whe
 
 Restart Claude Desktop after saving the file.
 
-### 6. Test it
+#### Claude Code
+
+The repository includes an `.mcp.json` file, so Claude Code discovers the MCP server automatically when you open the project folder.
+
+Create a `.env` file in the project root with your token:
+
+```bash
+ED_API_TOKEN=your_token_here
+```
+
+The repository also ships with four Claude Code skills in `skills/` that are auto-discovered. They provide structured workflows for common tasks like thread management, attendance, moderation, and course admin.
+
+### 5. Test it
 
 Ask Claude: "What courses am I enrolled in on Ed?" If everything is set up correctly, you'll see a list of your courses.
 
 ---
 
-## Tool reference
+## CLI
 
-For developers and anyone curious about what's available under the hood:
+The `ed` command gives you the same functionality from your terminal. Output is JSON, so it pipes well into `jq` or other tools.
+
+```bash
+uv run ed usage          # print the full command reference
+```
+
+| Command group | What it does |
+|---|---|
+| `ed courses` | List courses, get stats, list users, list categories |
+| `ed threads` | List, search, read, create, edit, reply, delete, moderate, recategorise |
+| `ed attendance` | List sessions, check in students, undo check-ins, get analytics |
+| `ed comments` | Edit or delete comments |
+| `ed users` | View a user's activity |
+| `ed files` | Upload files |
+| `ed config` | Save a default course ID |
+
+Most commands that need a course ID accept `--course`. To avoid typing it every time:
+
+```bash
+uv run ed config set-course 12345
+```
+
+After that, commands like `ed threads list` and `ed attendance analytics` will use course 12345 by default.
+
+---
+
+## Tool reference
 
 ### Courses and users
 
@@ -140,6 +177,18 @@ For developers and anyone curious about what's available under the hood:
 - **`accept_answer`** -- Mark the accepted answer on a question.
 - **`mark_duplicate`** / **`unmark_duplicate`** -- Flag duplicate threads.
 
+### Attendance
+
+- **`list_attendance_sessions`** -- List all sessions in a course.
+- **`get_attendance_session`** -- Full session detail with check-ins.
+- **`create_attendance_session`** -- Create a new session.
+- **`update_attendance_session`** -- Rename, close/reopen, or hide/show a session.
+- **`delete_attendance_session`** -- Delete a session and its check-ins.
+- **`list_check_ins`** -- List check-ins by course or session.
+- **`manual_check_in`** -- Mark students as present, late, excused, or absent.
+- **`undo_check_in`** -- Remove check-in records.
+- **`get_attendance_analytics`** -- Combined attendance report for a course.
+
 ### Files
 
 - **`upload_file`** -- Upload a file to Ed and get its URL.
@@ -151,7 +200,7 @@ For developers and anyone curious about what's available under the hood:
 | `ED_API_TOKEN` | Yes | Your Ed Discussion API token |
 | `ED_BASE_URL` | No | API base URL (defaults to `https://edstem.org/api`) |
 | `ED_STRIP_PII` | No | Strip emails, user IDs, avatars from responses (defaults to `true`; set to `false` to include all fields) |
-| `ED_REGION` | No | Region prefix for Ed URLs in responses — e.g. `au`, `us` (defaults to `us`) |
+| `ED_REGION` | No | Region prefix for Ed URLs in responses -- e.g. `au`, `us` (defaults to `us`) |
 
 ## License
 
