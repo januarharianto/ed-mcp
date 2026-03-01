@@ -387,3 +387,92 @@ class EdClient:
     async def delete_comment(self, comment_id: int) -> dict[str, Any]:
         """Delete a comment."""
         return await self._delete(f"/comments/{comment_id}")
+
+    # ------------------------------------------------------------------
+    # Attendance
+    # ------------------------------------------------------------------
+
+    async def list_attendance_sessions(self, course_id: int) -> dict[str, Any]:
+        """List attendance sessions (events) for a course."""
+        return await self._get(f"/courses/{course_id}/events")
+
+    async def get_attendance_session(self, event_id: int) -> dict[str, Any]:
+        """Get a single attendance session."""
+        return await self._get(f"/events/{event_id}")
+
+    async def create_attendance_session(
+        self,
+        course_id: int,
+        *,
+        title: str,
+        start: str | None = None,
+        content: str = '<document version="2.0"><paragraph/></document>',
+        is_hidden: bool = False,
+        password: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new attendance session."""
+        return await self._post(
+            f"/courses/{course_id}/events",
+            json={
+                "title": title,
+                "content": content,
+                "is_hidden": is_hidden,
+                "start": start,
+                "password": password,
+            },
+        )
+
+    async def update_attendance_session(
+        self,
+        event_id: int,
+        **fields: Any,
+    ) -> dict[str, Any]:
+        """Update an attendance session. Pass only the fields to change."""
+        return await self._put(f"/events/{event_id}", json=fields)
+
+    async def delete_attendance_session(self, event_id: int) -> dict[str, Any]:
+        """Delete an attendance session."""
+        return await self._delete(f"/events/{event_id}")
+
+    async def list_check_ins(
+        self,
+        *,
+        course_id: int | None = None,
+        event_id: int | None = None,
+    ) -> dict[str, Any]:
+        """List check-ins for a course or a specific session."""
+        if event_id is not None:
+            return await self._get(f"/events/{event_id}/check_ins")
+        if course_id is not None:
+            return await self._get(f"/courses/{course_id}/check_ins")
+        raise ValueError("Either course_id or event_id is required")
+
+    async def manual_check_in(
+        self,
+        event_id: int,
+        *,
+        user_ids: list[int],
+        kind: str = "present",
+    ) -> dict[str, Any]:
+        """Manually check in users with a status (present/late/excused/absent)."""
+        return await self._post(
+            f"/events/{event_id}/check_in",
+            json={"target_user_ids": user_ids, "kind": kind},
+        )
+
+    async def undo_check_in(
+        self,
+        event_id: int,
+        *,
+        user_ids: list[int],
+    ) -> dict[str, Any]:
+        """Remove manual check-ins for users."""
+        return await self._request(
+            "DELETE",
+            f"/events/{event_id}/check_in",
+            json={"user_ids": user_ids},
+        )
+
+    async def get_attendance_analytics(self, course_id: int) -> dict[str, Any]:
+        """Get combined attendance analytics (all events + all check-ins)."""
+        return await self._get(f"/courses/{course_id}/analytics/sessions")
