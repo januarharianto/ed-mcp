@@ -101,6 +101,23 @@ _USER_KEYS = {"id", "name", "course_role"}
 
 _UPLOAD_KEYS = {"url", "filename"}
 
+# Keys kept in attendance session summaries (list_attendance_sessions).
+_EVENT_SUMMARY_KEYS = {
+    "id", "title", "is_closed", "is_hidden", "start", "created_at",
+}
+
+# Keys kept in full attendance session detail.
+_EVENT_DETAIL_KEYS = {
+    "id", "course_id", "title", "content", "is_closed", "is_hidden",
+    "no_screen", "start", "qr_expiry", "index", "created_at",
+    "grade_passback_scoring_mode", "grade_passback_scale_to",
+}
+
+# Keys kept in check-in records.
+_CHECK_IN_KEYS = {
+    "event_id", "user_id", "checked_in_by", "kind", "method", "created_at",
+}
+
 
 def _trim_comment(c: dict) -> dict:
     """Strip a comment/answer to essential fields, recursing into replies."""
