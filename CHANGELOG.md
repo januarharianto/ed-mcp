@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Async HTTP client with Bearer token auth
 - Compact thread summaries for context efficiency
 
+## v0.6.0 (2026-03-01)
+
+### Feat
+
+- add 4 Claude Code skills for CLI mode
+- add Claude Code plugin manifest and MCP config
+- add moderation, attendance, and remaining CLI commands
+- add course and thread CLI commands
+- add CLI scaffold with typer, config management, and usage command
+
+### Fix
+
+- correct plan errors found during review
+
+### Refactor
+
+- extract shared helpers into _helpers.py for CLI reuse
+
 ## v0.5.0 (2026-03-01)
 
 ### Feat
