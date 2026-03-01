@@ -873,6 +873,128 @@ async def delete_comment(comment_id: int) -> str:
 
 
 # ======================================================================
+# Attendance
+# ======================================================================
+
+
+@mcp.tool()
+async def list_attendance_sessions(course_id: int) -> str:
+    """List attendance sessions in a course. Returns compact summaries. Use get_attendance_session to see full details.
+
+    Args:
+        course_id: The course ID (use list_courses to find it).
+    """
+    try:
+        result = await _get_client().list_attendance_sessions(course_id)
+        sessions = [
+            {k: e[k] for k in _EVENT_SUMMARY_KEYS if k in e}
+            for e in result.get("events", [])
+        ]
+        return _json({"sessions": sessions})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def get_attendance_session(event_id: int) -> str:
+    """Get full details of an attendance session, including its check-ins.
+
+    Args:
+        event_id: The session ID (from list_attendance_sessions results).
+    """
+    try:
+        client = _get_client()
+        event_data, checkins_data = await asyncio.gather(
+            client.get_attendance_session(event_id),
+            client.list_check_ins(event_id=event_id),
+        )
+        ev = event_data.get("event", event_data)
+        session = {k: ev[k] for k in _EVENT_DETAIL_KEYS if k in ev}
+        session["check_ins"] = [
+            {k: ci[k] for k in _CHECK_IN_KEYS if k in ci}
+            for ci in checkins_data.get("check_ins", [])
+        ]
+        return _json(session)
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def create_attendance_session(
+    course_id: int,
+    title: str,
+    start: str | None = None,
+    is_hidden: bool = False,
+) -> str:
+    """Create a new attendance session in a course.
+
+    Args:
+        course_id: The course ID (use list_courses to find it).
+        title: Session title (e.g. "Week 3 Tutorial").
+        start: Optional start time in ISO 8601 format (e.g. "2026-03-01T09:00:00+11:00"). Defaults to now.
+        is_hidden: If true, the session is hidden from students.
+    """
+    try:
+        result = await _get_client().create_attendance_session(
+            course_id, title=title, start=start, is_hidden=is_hidden,
+        )
+        ev = result.get("event", result)
+        return _json({"id": ev.get("id"), "title": ev.get("title")})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def update_attendance_session(
+    event_id: int,
+    title: str | None = None,
+    is_closed: bool | None = None,
+    is_hidden: bool | None = None,
+) -> str:
+    """Update an attendance session. Use this to close/reopen, hide/unhide, or rename a session.
+
+    Args:
+        event_id: The session ID (from list_attendance_sessions results).
+        title: New title (omit to keep current).
+        is_closed: Set true to close the session, false to reopen.
+        is_hidden: Set true to hide from students, false to show.
+    """
+    try:
+        fields: dict = {}
+        if title is not None:
+            fields["title"] = title
+        if is_closed is not None:
+            fields["is_closed"] = is_closed
+        if is_hidden is not None:
+            fields["is_hidden"] = is_hidden
+        if not fields:
+            return "Error: No fields to update. Provide at least one of: title, is_closed, is_hidden."
+        result = await _get_client().update_attendance_session(event_id, **fields)
+        ev = result.get("event", result)
+        return _json({
+            "id": ev.get("id"),
+            "title": ev.get("title"),
+            "is_closed": ev.get("is_closed"),
+        })
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def delete_attendance_session(event_id: int) -> str:
+    """Permanently delete an attendance session and all its check-ins. This cannot be undone.
+
+    Args:
+        event_id: The session ID (from list_attendance_sessions results).
+    """
+    try:
+        await _get_client().delete_attendance_session(event_id)
+        return "Attendance session deleted."
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+# ======================================================================
 # Entry point
 # ======================================================================
 
