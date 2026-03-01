@@ -994,6 +994,101 @@ async def delete_attendance_session(event_id: int) -> str:
         return f"Error: {e.message}"
 
 
+@mcp.tool()
+async def list_check_ins(
+    course_id: int | None = None,
+    event_id: int | None = None,
+) -> str:
+    """List attendance check-ins. Provide either course_id for all check-ins across sessions, or event_id for a single session.
+
+    Args:
+        course_id: The course ID — returns check-ins across all sessions.
+        event_id: A specific session ID — returns only that session's check-ins.
+    """
+    if course_id is None and event_id is None:
+        return "Error: Provide either course_id or event_id."
+    try:
+        result = await _get_client().list_check_ins(
+            course_id=course_id, event_id=event_id,
+        )
+        check_ins = [
+            {k: ci[k] for k in _CHECK_IN_KEYS if k in ci}
+            for ci in result.get("check_ins", [])
+        ]
+        return _json({"check_ins": check_ins})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def manual_check_in(
+    event_id: int,
+    user_ids: list[int],
+    kind: str = "present",
+) -> str:
+    """Manually mark students' attendance for a session. Use list_users to find user IDs.
+
+    Args:
+        event_id: The session ID (from list_attendance_sessions results).
+        user_ids: List of user IDs to check in.
+        kind: Attendance status — "present", "late", "excused", or "absent".
+    """
+    valid_kinds = {"present", "late", "excused", "absent"}
+    if kind not in valid_kinds:
+        return f"Error: kind must be one of: {', '.join(sorted(valid_kinds))}"
+    try:
+        result = await _get_client().manual_check_in(
+            event_id, user_ids=user_ids, kind=kind,
+        )
+        check_ins = [
+            {k: ci[k] for k in _CHECK_IN_KEYS if k in ci}
+            for ci in result.get("check_ins", [])
+        ]
+        return _json({"checked_in": len(check_ins), "check_ins": check_ins})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def undo_check_in(
+    event_id: int,
+    user_ids: list[int],
+) -> str:
+    """Remove check-in records for specific users in a session. This undoes both manual and self check-ins.
+
+    Args:
+        event_id: The session ID.
+        user_ids: List of user IDs whose check-ins to remove.
+    """
+    try:
+        await _get_client().undo_check_in(event_id, user_ids=user_ids)
+        return _json({"event_id": event_id, "removed": len(user_ids)})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
+async def get_attendance_analytics(course_id: int) -> str:
+    """Get a combined attendance report for a course — all sessions with all check-ins. Useful for generating attendance summaries.
+
+    Args:
+        course_id: The course ID (use list_courses to find it).
+    """
+    try:
+        result = await _get_client().get_attendance_analytics(course_id)
+        sessions = [
+            {k: e[k] for k in _EVENT_SUMMARY_KEYS if k in e}
+            for e in result.get("events", [])
+        ]
+        check_ins = [
+            {k: ci[k] for k in _CHECK_IN_KEYS if k in ci}
+            for ci in result.get("check_ins", [])
+        ]
+        return _json({"sessions": sessions, "check_ins": check_ins})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
 # ======================================================================
 # Entry point
 # ======================================================================
