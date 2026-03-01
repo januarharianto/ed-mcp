@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Async HTTP client with Bearer token auth
 - Compact thread summaries for context efficiency
 
+## v0.5.0 (2026-03-01)
+
+### Feat
+
+- add attendance check-in and analytics tools
+- add attendance session management tools
+- add attendance client methods to EdClient
+
+### Refactor
+
+- add attendance key-set constants
+
 ## v0.4.0 (2026-02-11)
 
 ### Feat
