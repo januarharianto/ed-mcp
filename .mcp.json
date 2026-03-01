@@ -1,0 +1,9 @@
+{
+  "edstem": {
+    "command": "uv",
+    "args": ["run", "python", "-m", "edstem_mcp.server"],
+    "env": {
+      "ED_API_TOKEN": "${ED_API_TOKEN}"
+    }
+  }
+}
