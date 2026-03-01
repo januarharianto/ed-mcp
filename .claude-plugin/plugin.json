@@ -1,9 +1,9 @@
 {
   "name": "edstem",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Ed Discussion tools for Claude Code — browse threads, manage attendance, moderate discussions.",
   "author": {
     "name": "Januar Harianto"
   },
-  "repository": "https://github.com/jhar8696/edstem-mcp"
+  "repository": "https://github.com/januarharianto/ed-mcp"
 }
