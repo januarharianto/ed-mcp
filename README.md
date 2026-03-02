@@ -1,5 +1,7 @@
 # ed-mcp
 
+![Lines of code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/januarharianto/ed-mcp/main/.github/badges/loc.json)
+
 An MCP server and CLI for [Ed Discussion](https://edstem.org). It gives LLMs (and you) access to threads, comments, attendance, moderation, and file uploads through 38 tools. Works with Claude Desktop, Claude Code, or any MCP-compatible client.
 
 ## What can I do with this?
