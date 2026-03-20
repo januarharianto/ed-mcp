@@ -86,6 +86,13 @@ class EdClient:
                 message = body.get("message", response.text)
             except Exception:
                 message = response.text
+            # Add context for common errors
+            if response.status_code == 403:
+                message = (
+                    f"Forbidden — the API token does not have access to "
+                    f"{path}. Check that the course ID is correct and that "
+                    f"you are enrolled (use list_courses to verify)."
+                )
             exc_cls = _ERROR_MAP.get(response.status_code, EdAPIError)
             raise exc_cls(response.status_code, message)
 
