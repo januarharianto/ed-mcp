@@ -200,25 +200,33 @@ async def list_categories(course_id: int) -> str:
 @mcp.tool()
 async def list_threads(
     course_id: int,
-    limit: int = 30,
+    limit: int = 50,
     offset: int = 0,
     sort: str = "new",
     filter: str | None = None,
+    category: str | None = None,
 ) -> str:
-    """Browse threads in a course. Returns compact summaries (no full content). Use get_thread or get_course_thread to read a specific thread's content.
+    """Browse threads in a course. Returns compact summaries (no full content). Use get_thread or get_course_thread to read a specific thread's content. For keyword searches, prefer search_threads instead.
 
     Args:
         course_id: The course ID (use list_courses to find it).
-        limit: Max threads to return (default 30).
+        limit: Max threads to return (default 50, max 100).
         offset: Pagination offset (use with limit to page through results).
         sort: Sort order — "new" for most recent, "top" for most voted, or "trending" for currently active.
         filter: Narrow results — "unanswered" for questions needing a response, "unresolved" for threads with open follow-ups, "mine" for your own threads, "following" for threads you follow.
+        category: Filter by category name (case-insensitive). Only returns threads in this category.
     """
     try:
+        fetch_limit = min(limit * 2, 100) if category else min(limit, 100)
         result = await _get_client().list_threads(
-            course_id, limit=limit, offset=offset, sort=sort, filter=filter
+            course_id, limit=fetch_limit, offset=offset, sort=sort, filter=filter
         )
-        return _json({"threads": _summarise_threads(result.get("threads", []), course_id)})
+        threads = result.get("threads", [])
+        if category:
+            cat_lower = category.lower()
+            threads = [t for t in threads if (t.get("category", "") or "").lower() == cat_lower]
+            threads = threads[:limit]
+        return _json({"threads": _summarise_threads(threads, course_id)})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -321,17 +329,33 @@ async def unmark_duplicate(thread_id: int) -> str:
 
 
 @mcp.tool()
-async def search_threads(course_id: int, query: str, limit: int = 20) -> str:
-    """Search threads in a course by keyword. Returns compact summaries. Use get_thread to read the full content of a result.
+async def search_threads(
+    course_id: int,
+    query: str,
+    limit: int = 20,
+    type: str | None = None,
+    exclude_pinned: bool = False,
+) -> str:
+    """Search threads in a course by keyword. Returns compact summaries. Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
 
     Args:
         course_id: The course ID (use list_courses to find it).
         query: Search keywords (e.g. "peer review", "exam", "deadline").
         limit: Max results (default 20).
+        type: Filter by thread type — "question", "post", or "announcement". Omit for all types.
+        exclude_pinned: If true, exclude pinned threads from results (useful to skip announcements). Default false.
     """
     try:
-        result = await _get_client().search_threads(course_id, query, limit=limit)
-        return _json({"threads": _summarise_threads(result.get("threads", []), course_id)})
+        # Fetch extra results to account for post-filtering
+        fetch_limit = limit * 3 if (type or exclude_pinned) else limit
+        result = await _get_client().search_threads(course_id, query, limit=fetch_limit)
+        threads = result.get("threads", [])
+        if exclude_pinned:
+            threads = [t for t in threads if not t.get("is_pinned")]
+        if type:
+            threads = [t for t in threads if t.get("type") == type]
+        threads = threads[:limit]
+        return _json({"threads": _summarise_threads(threads, course_id)})
     except EdAPIError as e:
         return f"Error: {e.message}"
 
@@ -420,15 +444,37 @@ async def bulk_recategorise(
     thread_ids: list[int],
     category: str,
     subcategory: str = "",
+    dry_run: bool = False,
 ) -> str:
-    """Move multiple threads to a new category at once. Use search_threads or list_threads to find thread IDs, and list_categories for valid category names.
+    """Move multiple threads to a new category at once. Use search_threads or list_threads to find thread IDs, and list_categories for valid category names. Set dry_run=true to preview changes without applying them.
 
     Args:
         thread_ids: List of global thread IDs to move.
         category: Target category name (use list_categories to see options).
         subcategory: Target subcategory name (optional).
+        dry_run: If true, show what would change without applying. Default false.
     """
     client = _get_client()
+
+    if dry_run:
+        async def _preview(tid: int) -> dict:
+            try:
+                result = await client.get_thread(tid)
+                t = result.get("thread", result)
+                return {
+                    "id": tid,
+                    "number": t.get("number"),
+                    "title": t.get("title"),
+                    "from": t.get("category", "") + (
+                        f" > {t['subcategory']}" if t.get("subcategory") else ""
+                    ),
+                    "to": category + (f" > {subcategory}" if subcategory else ""),
+                }
+            except EdAPIError as e:
+                return {"id": tid, "error": e.message}
+
+        changes = await asyncio.gather(*[_preview(tid) for tid in thread_ids])
+        return _json({"dry_run": True, "would_update": len(changes), "changes": changes})
 
     async def _update(tid: int) -> dict:
         try:
