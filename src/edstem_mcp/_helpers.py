@@ -55,9 +55,13 @@ def _strip_user_pii(user: dict) -> dict:
 # Keys kept in thread summaries (list/search). Full content via get_thread.
 _THREAD_SUMMARY_KEYS = {
     "id", "number", "type", "title", "category", "subcategory",
-    "created_at", "is_pinned", "is_private", "is_endorsed",
-    "is_answered", "is_locked", "reply_count", "vote_count",
+    "created_at", "reply_count", "vote_count",
     "view_count", "unresolved_count",
+}
+
+# Boolean keys only included when True (false is the default).
+_THREAD_SUMMARY_BOOL_KEYS = {
+    "is_pinned", "is_private", "is_endorsed", "is_answered", "is_locked",
 }
 
 # Keys kept in full thread detail responses (get_thread / get_course_thread).
@@ -113,13 +117,15 @@ _ACTIVITY_COMMENT_KEYS = {
 
 def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
     """Extract compact summaries from a list of thread dicts."""
-    return [
-        {
-            **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
-            "user": t.get("user", {}).get("name", ""),
-        }
-        for t in threads
-    ]
+    result = []
+    for t in threads:
+        summary = {k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t}
+        for k in _THREAD_SUMMARY_BOOL_KEYS:
+            if t.get(k):
+                summary[k] = True
+        summary["user"] = t.get("user", {}).get("name", "")
+        result.append(summary)
+    return result
 
 
 def _trim_comment(c: dict) -> dict:

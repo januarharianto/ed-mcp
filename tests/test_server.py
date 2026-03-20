@@ -90,6 +90,38 @@ def test_summarise_threads_no_url():
     assert result[0]["number"] == 42
 
 
+def test_summarise_threads_omits_false_booleans():
+    """False booleans are the default — only include when true to save tokens."""
+    threads = [{
+        "id": 1, "number": 1, "type": "post", "title": "Normal",
+        "category": "General", "subcategory": "",
+        "created_at": "2025-01-01", "is_pinned": False, "is_private": False,
+        "is_endorsed": False, "is_answered": False, "is_locked": False,
+        "reply_count": 0, "vote_count": 0, "view_count": 0, "unresolved_count": 0,
+        "user": {"name": "Alice"},
+    }, {
+        "id": 2, "number": 2, "type": "question", "title": "Pinned Q",
+        "category": "General", "subcategory": "",
+        "created_at": "2025-01-01", "is_pinned": True, "is_private": False,
+        "is_endorsed": True, "is_answered": False, "is_locked": False,
+        "reply_count": 5, "vote_count": 3, "view_count": 100, "unresolved_count": 0,
+        "user": {"name": "Bob"},
+    }]
+    result = _summarise_threads(threads, course_id=1)
+    # Thread with all-false booleans: none of the is_* keys present
+    assert "is_pinned" not in result[0]
+    assert "is_private" not in result[0]
+    assert "is_endorsed" not in result[0]
+    assert "is_answered" not in result[0]
+    assert "is_locked" not in result[0]
+    # Thread with some true booleans: only true ones present
+    assert result[1]["is_pinned"] is True
+    assert result[1]["is_endorsed"] is True
+    assert "is_private" not in result[1]
+    assert "is_answered" not in result[1]
+    assert "is_locked" not in result[1]
+
+
 def test_trim_comment_strips_bloat():
     comment = {
         "id": 1, "user_id": 2, "parent_id": None, "type": "comment",
