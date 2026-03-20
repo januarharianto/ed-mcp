@@ -20,6 +20,7 @@ from edstem_mcp.server import (
     edit_comment,
     edit_thread,
     endorse_thread,
+    get_attendance_session,
     get_course_stats,
     get_course_thread,
     get_thread,
@@ -454,6 +455,35 @@ async def test_get_user_activity(mock_client):
     # document (full body text) is stripped from activity listings to save tokens
     assert "document" not in result[0]
     assert "document" not in result[1]
+
+
+# ------------------------------------------------------------------
+# Attendance tools
+# ------------------------------------------------------------------
+
+
+async def test_get_attendance_session_strips_admin_fields(mock_client):
+    """Admin-only fields waste tokens — keep only operationally useful keys."""
+    mock_client.get_attendance_session.return_value = {
+        "event": {
+            "id": 1, "course_id": 10, "title": "Week 3 Tutorial",
+            "content": '<document version="2.0"><paragraph/></document>',
+            "is_closed": False, "is_hidden": False,
+            "start": "2026-03-01T09:00:00+11:00", "created_at": "2026-02-28T10:00:00+11:00",
+            # These admin fields should be stripped
+            "no_screen": False, "qr_expiry": 300, "index": 2,
+            "grade_passback_scoring_mode": "points",
+            "grade_passback_scale_to": 100,
+        },
+    }
+    mock_client.list_check_ins.return_value = {"check_ins": []}
+    result = _parse(await get_attendance_session(1))
+    assert result["title"] == "Week 3 Tutorial"
+    assert "no_screen" not in result
+    assert "qr_expiry" not in result
+    assert "index" not in result
+    assert "grade_passback_scoring_mode" not in result
+    assert "grade_passback_scale_to" not in result
 
 
 # ------------------------------------------------------------------

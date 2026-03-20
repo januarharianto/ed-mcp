@@ -87,8 +87,7 @@ _EVENT_SUMMARY_KEYS = {
 # Keys kept in full attendance session detail.
 _EVENT_DETAIL_KEYS = {
     "id", "course_id", "title", "content", "is_closed", "is_hidden",
-    "no_screen", "start", "qr_expiry", "index", "created_at",
-    "grade_passback_scoring_mode", "grade_passback_scale_to",
+    "start", "created_at",
 }
 
 # Keys kept in check-in records.
