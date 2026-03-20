@@ -5,13 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## 0.1.0 (2026-02-09)
+## v0.8.0 (2026-03-21)
 
-### Feat
+### Refactor
 
-- MCP server exposing Ed Discussion API as tools
-- Async HTTP client with Bearer token auth
-- Compact thread summaries for context efficiency
+- drop URLs from thread summaries (reconstructible from id + course_id)
+- drop full document body from user activity listings
+- drop participants list from thread detail (redundant with per-comment users)
+- trim admin-only fields from attendance session detail
+- omit false booleans from thread summaries (only include when true)
+- truncate timestamps to date-only in thread summaries
+- omit null and empty-string values from all trimmed responses
+
+### Fix
+
+- update outdated test assertions to match current implementation
 
 ## v0.7.0 (2026-03-20)
 

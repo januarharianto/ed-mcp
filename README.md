@@ -194,6 +194,21 @@ After that, commands like `ed threads list` and `ed attendance analytics` will u
 ### Files
 
 - **`upload_file`** -- Upload a file to Ed and get its URL.
+- **`download_file`** -- Download a file from an Ed CDN URL to a local path.
+- **`download_thread_files`** -- Batch download all images and attachments from a thread.
+
+## Response efficiency
+
+All tool responses are trimmed for LLM context efficiency:
+
+- **List/search tools** return compact summaries (key subset, no content body).
+- **Detail tools** return full content but strip metadata bloat.
+- **Write tools** return minimal confirmations (id, number, title).
+- **Booleans** like `is_pinned` and `is_locked` are only included when `true`.
+- **Timestamps** are date-only in summaries, full precision in detail views.
+- **Null/empty values** are omitted from all responses.
+
+Use `get_thread` or `get_course_thread` when you need full thread content.
 
 ## Environment variables
 
