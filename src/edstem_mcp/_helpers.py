@@ -157,12 +157,4 @@ def _trim_thread_detail(data: dict) -> dict:
             trimmed[key] = [_trim_comment(c) for c in t[key]]
     if strip_pii and "content" in trimmed:
         trimmed["content"] = _scrub_emails(trimmed["content"])
-    # Compact users list (participants)
-    users = data.get("users", [])
-    if users:
-        trimmed["users"] = [
-            _strip_user_pii(u) if strip_pii
-            else {k: u[k] for k in _USER_KEYS if k in u}
-            for u in users
-        ]
     return trimmed

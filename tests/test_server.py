@@ -141,7 +141,8 @@ def test_trim_thread_detail_strips_bloat():
     result = _trim_thread_detail(data)
     assert "editor_id" not in result
     assert "document" not in result
-    assert "avatar" not in result["users"][0]
+    # Participants list is redundant with per-comment user info
+    assert "users" not in result
     assert len(result["comments"]) == 1
 
 
@@ -608,10 +609,8 @@ def test_trim_thread_detail_pii_strips_users():
     assert "id" not in result["user"]
     assert "email" not in result["user"]
     assert result["user"]["name"] == "Alice"
-    # Participants list stripped
-    assert "id" not in result["users"][0]
-    assert "email" not in result["users"][0]
-    assert "avatar" not in result["users"][0]
+    # Participants list dropped entirely (redundant with per-comment users)
+    assert "users" not in result
     # Email in content scrubbed
     assert "bob@school.com" not in result["content"]
     assert "[email]" in result["content"]
@@ -638,7 +637,8 @@ def test_trim_thread_detail_pii_disabled_preserves_all(monkeypatch):
     }
     result = _trim_thread_detail(data)
     assert result["user"]["id"] == 5
-    assert result["users"][0]["id"] == 5
+    # Participants list dropped regardless of PII setting
+    assert "users" not in result
     assert "bob@school.com" in result["content"]
 
 
