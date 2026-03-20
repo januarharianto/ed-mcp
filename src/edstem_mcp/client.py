@@ -351,14 +351,25 @@ class EdClient:
             files={"attachment": (path.name, data, content_type)},
         )
 
-    async def download_file(self, url: str, dest: Path) -> Path:
-        """Download a file from an Ed CDN URL to a local path."""
+    async def download_file(self, url: str, dest: Path) -> tuple[Path, str]:
+        """Download a file from an Ed CDN URL. Returns (path, filename)."""
         async with httpx.AsyncClient(timeout=60.0) as http:
             resp = await http.get(url)
             if not resp.is_success:
                 raise EdAPIError(resp.status_code, f"Failed to download {url}")
+            # Extract filename from Content-Disposition header
+            cd = resp.headers.get("content-disposition", "")
+            filename = ""
+            if "filename=" in cd:
+                for part in cd.split(";"):
+                    part = part.strip()
+                    if part.startswith("filename="):
+                        filename = part.split("=", 1)[1].strip('" ')
+                        break
+            if filename:
+                dest = dest.parent / filename
             dest.write_bytes(resp.content)
-        return dest
+        return dest, filename
 
     # ------------------------------------------------------------------
     # Comments / replies
