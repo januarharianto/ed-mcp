@@ -347,7 +347,7 @@ async def search_threads(
     """
     try:
         # Fetch extra results to account for post-filtering
-        fetch_limit = limit * 3 if (type or exclude_pinned) else limit
+        fetch_limit = min(limit * 3, 100) if (type or exclude_pinned) else min(limit, 100)
         result = await _get_client().search_threads(course_id, query, limit=fetch_limit)
         threads = result.get("threads", [])
         if exclude_pinned:
