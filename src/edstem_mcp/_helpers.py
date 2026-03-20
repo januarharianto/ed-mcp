@@ -118,7 +118,6 @@ def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
         {
             **{k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t},
             "user": t.get("user", {}).get("name", ""),
-            "url": _thread_url(course_id, t["id"]),
         }
         for t in threads
     ]

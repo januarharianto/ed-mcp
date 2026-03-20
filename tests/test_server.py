@@ -72,6 +72,23 @@ def test_summarise_threads_keeps_only_summary_keys():
     assert "editor_id" not in result[0]
 
 
+def test_summarise_threads_no_url():
+    """URLs are reconstructible from id + course_id — don't waste tokens."""
+    threads = [{
+        "id": 123, "number": 42, "type": "post", "title": "Hello",
+        "category": "General", "subcategory": "",
+        "created_at": "2025-01-01", "is_pinned": False, "is_private": False,
+        "is_endorsed": False, "is_answered": False, "is_locked": False,
+        "reply_count": 0, "vote_count": 0, "view_count": 0, "unresolved_count": 0,
+        "user": {"name": "Alice"},
+    }]
+    result = _summarise_threads(threads, course_id=1)
+    assert "url" not in result[0]
+    # But id and number are still present for the LLM to reconstruct if needed
+    assert result[0]["id"] == 123
+    assert result[0]["number"] == 42
+
+
 def test_trim_comment_strips_bloat():
     comment = {
         "id": 1, "user_id": 2, "parent_id": None, "type": "comment",
