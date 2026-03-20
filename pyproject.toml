@@ -24,7 +24,7 @@ packages = ["src/edstem_mcp"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.6.0"
+version = "0.7.0"
 version_files = ["src/edstem_mcp/__about__.py:__version__"]
 update_changelog_on_bump = true
 tag_format = "v$version"

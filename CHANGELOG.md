@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Async HTTP client with Bearer token auth
 - Compact thread summaries for context efficiency
 
+## v0.7.0 (2026-03-20)
+
+### Feat
+
+- add category filter, search post-filters, and dry-run mode
+
+### Fix
+
+- improve 403 error message with enrollment context
+- correct version and repo URL in plugin.json
+
 ## v0.6.0 (2026-03-01)
 
 ### Feat
