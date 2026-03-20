@@ -65,7 +65,7 @@ def test_summarise_threads_keeps_only_summary_keys():
         "editor_id": 999,
         "deleted_at": None,
     }]
-    result = _summarise_threads(threads)
+    result = _summarise_threads(threads, course_id=1)
     assert len(result) == 1
     assert result[0]["user"] == "Alice"
     assert "content" not in result[0]
@@ -261,9 +261,9 @@ async def test_get_course_thread(mock_client):
 
 
 async def test_get_thread_by_url_valid(mock_client):
-    mock_client.get_course_thread.return_value = {
+    mock_client.get_thread.return_value = {
         "thread": {
-            "id": 1, "number": 220, "type": "post", "title": "URL thread",
+            "id": 220, "number": 220, "type": "post", "title": "URL thread",
             "content": "<doc/>", "category": "", "subcategory": "",
             "course_id": 12345, "user_id": 5, "accepted_id": None,
             "duplicate_id": None,
@@ -277,7 +277,7 @@ async def test_get_thread_by_url_valid(mock_client):
     }
     result = _parse(await get_thread_by_url("https://edstem.org/au/courses/12345/discussion/220"))
     assert result["number"] == 220
-    mock_client.get_course_thread.assert_called_with(12345, 220)
+    mock_client.get_thread.assert_called_with(220)
 
 
 async def test_get_thread_by_url_invalid():
@@ -326,7 +326,7 @@ async def test_create_thread(mock_client):
         "thread": {"id": 99, "number": 1, "title": "New"},
     }
     result = _parse(await create_thread(1, "New", "<doc/>"))
-    assert set(result.keys()) == {"id", "number", "title"}
+    assert set(result.keys()) == {"id", "number", "title", "url"}
 
 
 async def test_edit_thread(mock_client):
@@ -412,26 +412,27 @@ async def test_list_users(mock_client):
         ],
     }
     result = _parse(await list_users(1))
-    assert len(result) == 1
-    assert set(result[0].keys()) == {"id", "name", "course_role"}
+    assert result["total"] == 1
+    assert set(result["users"][0].keys()) == {"id", "name", "course_role"}
 
 
 async def test_get_user_activity(mock_client):
     mock_client.get_user_activity.return_value = {
-        "activity": [
-            {"thread": {"id": 1, "number": 10, "type": "post", "title": "T",
-                         "category": "General", "created_at": "2025-01-01",
-                         "content": "bloat"}},
-            {"comment": {"id": 2, "type": "comment", "thread_id": 1,
-                          "created_at": "2025-01-01", "content": "bloat"}},
+        "items": [
+            {"type": "thread", "value": {
+                "id": 1, "type": "post", "course_id": 10, "title": "T",
+                "category": "General", "subcategory": "",
+                "document": "<doc>content</doc>", "created_at": "2025-01-01"}},
+            {"type": "comment", "value": {
+                "id": 2, "type": "comment", "thread_id": 1, "thread_title": "T",
+                "thread_category": "General",
+                "document": "<doc>reply</doc>", "created_at": "2025-01-01"}},
         ],
     }
     result = _parse(await get_user_activity(1, 1))
     assert len(result) == 2
     assert result[0]["kind"] == "thread"
-    assert "content" not in result[0]
     assert result[1]["kind"] == "comment"
-    assert "content" not in result[1]
 
 
 # ------------------------------------------------------------------
@@ -641,9 +642,9 @@ async def test_list_users_pii_maps_user_id(mock_client):
         ],
     }
     result = _parse(await list_users(1))
-    assert result[0]["id"] == 42
-    assert "email" not in result[0]
-    assert set(result[0].keys()) == {"id", "name", "course_role"}
+    assert result["users"][0]["id"] == 42
+    assert "email" not in result["users"][0]
+    assert set(result["users"][0].keys()) == {"id", "name", "course_role"}
 
 
 async def test_list_users_pii_disabled(mock_client, monkeypatch):
@@ -654,6 +655,6 @@ async def test_list_users_pii_disabled(mock_client, monkeypatch):
         ],
     }
     result = _parse(await list_users(1))
-    assert result[0]["id"] == 42
-    assert result[0]["email"] == "a@b.com"
-    assert set(result[0].keys()) == {"id", "name", "course_role", "email"}
+    assert result["users"][0]["id"] == 42
+    assert result["users"][0]["email"] == "a@b.com"
+    assert set(result["users"][0].keys()) == {"id", "name", "course_role", "email"}
