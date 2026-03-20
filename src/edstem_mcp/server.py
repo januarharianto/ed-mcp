@@ -719,6 +719,73 @@ async def upload_file(file_path: str) -> str:
         return f"Error: {e.message}"
 
 
+@mcp.tool()
+async def download_file(url: str) -> str:
+    """Download a file from an Ed Discussion CDN URL to a temporary local path. Returns the local file path so you can read or view it.
+
+    Args:
+        url: The Ed CDN URL (e.g. https://static.au.edusercontent.com/files/...).
+    """
+    if "edusercontent.com" not in url and "edstem.org" not in url:
+        return "Error: URL must be from edusercontent.com or edstem.org"
+    try:
+        import tempfile
+        suffix = Path(url.rstrip("/").split("/")[-1]).suffix or ".bin"
+        tmp = Path(tempfile.mktemp(suffix=suffix, prefix="ed_"))
+        await _get_client().download_file(url, tmp)
+        return _json({"path": str(tmp), "size": tmp.stat().st_size})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+_IMAGE_SRC_RE = re.compile(r'<image\s[^>]*src="([^"]+)"')
+
+
+@mcp.tool()
+async def download_thread_images(thread_id: int) -> str:
+    """Download all images from a thread's content, answers, and comments to temporary local files. Returns local file paths so you can view them.
+
+    Args:
+        thread_id: The global thread ID (from list_threads or search_threads results).
+    """
+    try:
+        import tempfile
+        result = await _get_client().get_thread(thread_id)
+        t = result.get("thread", result)
+
+        # Collect all image URLs from content + comments + answers
+        all_content = [t.get("content", "")]
+        for key in ("answers", "comments"):
+            for c in t.get(key, []):
+                all_content.append(c.get("content", ""))
+                for nested in c.get("comments", []):
+                    all_content.append(nested.get("content", ""))
+
+        urls = []
+        for text in all_content:
+            urls.extend(_IMAGE_SRC_RE.findall(text))
+
+        if not urls:
+            return _json({"images": [], "message": "No images found in this thread."})
+
+        # Download all images concurrently
+        client = _get_client()
+        tmpdir = Path(tempfile.mkdtemp(prefix="ed_images_"))
+
+        async def _dl(i: int, url: str) -> dict:
+            try:
+                dest = tmpdir / f"image_{i}.png"
+                await client.download_file(url, dest)
+                return {"path": str(dest), "url": url, "size": dest.stat().st_size}
+            except EdAPIError as e:
+                return {"url": url, "error": e.message}
+
+        images = await asyncio.gather(*[_dl(i, u) for i, u in enumerate(urls)])
+        return _json({"images": images, "total": len(images)})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
 # ======================================================================
 # Comments / Replies
 # ======================================================================

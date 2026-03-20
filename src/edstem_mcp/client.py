@@ -351,6 +351,15 @@ class EdClient:
             files={"attachment": (path.name, data, content_type)},
         )
 
+    async def download_file(self, url: str, dest: Path) -> Path:
+        """Download a file from an Ed CDN URL to a local path."""
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            resp = await http.get(url)
+            if not resp.is_success:
+                raise EdAPIError(resp.status_code, f"Failed to download {url}")
+            dest.write_bytes(resp.content)
+        return dest
+
     # ------------------------------------------------------------------
     # Comments / replies
     # ------------------------------------------------------------------
