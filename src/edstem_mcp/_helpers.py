@@ -20,6 +20,11 @@ def _json(data: dict) -> str:
     return json.dumps(data, separators=(",", ":"), default=str)
 
 
+def _compact(d: dict) -> dict:
+    """Drop keys with None or empty-string values. Keep 0 and False."""
+    return {k: v for k, v in d.items() if v is not None and v != ""}
+
+
 def _thread_url(course_id: int, thread_id: int) -> str:
     """Build an Ed Discussion URL for a thread."""
     region = os.environ.get("ED_REGION", "us")
@@ -119,7 +124,7 @@ def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
     """Extract compact summaries from a list of thread dicts."""
     result = []
     for t in threads:
-        summary = {k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t}
+        summary = _compact({k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t})
         # Truncate timestamp to date-only in summaries
         if "created_at" in summary:
             summary["created_at"] = str(summary["created_at"])[:10]
@@ -133,7 +138,7 @@ def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
 
 def _trim_comment(c: dict) -> dict:
     """Strip a comment/answer to essential fields, recursing into replies."""
-    trimmed = {k: c[k] for k in _COMMENT_KEYS if k in c}
+    trimmed = _compact({k: c[k] for k in _COMMENT_KEYS if k in c})
     strip_pii = _pii_enabled()
     if c.get("user"):
         trimmed["user"] = (
@@ -151,7 +156,7 @@ def _trim_comment(c: dict) -> dict:
 def _trim_thread_detail(data: dict) -> dict:
     """Trim a full thread API response to essential fields."""
     t = data.get("thread", data)
-    trimmed = {k: t[k] for k in _THREAD_DETAIL_KEYS if k in t}
+    trimmed = _compact({k: t[k] for k in _THREAD_DETAIL_KEYS if k in t})
     if "id" in trimmed and "course_id" in trimmed:
         trimmed["url"] = _thread_url(trimmed["course_id"], trimmed["id"])
     strip_pii = _pii_enabled()

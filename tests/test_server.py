@@ -137,6 +137,25 @@ def test_summarise_threads_date_only_timestamp():
     assert result[0]["created_at"] == "2026-03-21"
 
 
+def test_summarise_threads_omits_empty_values():
+    """Null and empty-string values waste tokens — omit them."""
+    threads = [{
+        "id": 1, "number": 1, "type": "post", "title": "T",
+        "category": "General", "subcategory": "",
+        "created_at": "2026-03-21", "is_pinned": False, "is_private": False,
+        "is_endorsed": False, "is_answered": False, "is_locked": False,
+        "reply_count": 0, "vote_count": 0, "view_count": 0, "unresolved_count": 0,
+        "user": {"name": "Alice"},
+    }]
+    result = _summarise_threads(threads, course_id=1)
+    # Empty subcategory should be omitted
+    assert "subcategory" not in result[0]
+    # But zero counts should be kept (0 is meaningful: "no replies")
+    assert result[0]["reply_count"] == 0
+    # Non-empty category should be kept
+    assert result[0]["category"] == "General"
+
+
 def test_trim_comment_strips_bloat():
     comment = {
         "id": 1, "user_id": 2, "parent_id": None, "type": "comment",
@@ -192,6 +211,11 @@ def test_trim_thread_detail_strips_bloat():
     # Participants list is redundant with per-comment user info
     assert "users" not in result
     assert len(result["comments"]) == 1
+    # Null values should be omitted
+    assert "accepted_id" not in result
+    assert "duplicate_id" not in result
+    # Empty subcategory should be omitted
+    assert "subcategory" not in result
 
 
 # ------------------------------------------------------------------
