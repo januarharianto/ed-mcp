@@ -99,11 +99,11 @@ _CHECK_IN_KEYS = {
 # Keys kept in user activity responses.
 _ACTIVITY_THREAD_KEYS = {
     "id", "type", "course_id", "title", "category", "subcategory",
-    "document", "created_at",
+    "created_at",
 }
 _ACTIVITY_COMMENT_KEYS = {
     "id", "type", "thread_id", "thread_title", "thread_category",
-    "document", "created_at",
+    "created_at",
 }
 
 

@@ -450,6 +450,9 @@ async def test_get_user_activity(mock_client):
     assert len(result) == 2
     assert result[0]["kind"] == "thread"
     assert result[1]["kind"] == "comment"
+    # document (full body text) is stripped from activity listings to save tokens
+    assert "document" not in result[0]
+    assert "document" not in result[1]
 
 
 # ------------------------------------------------------------------
