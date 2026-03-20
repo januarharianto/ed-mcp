@@ -122,6 +122,21 @@ def test_summarise_threads_omits_false_booleans():
     assert "is_locked" not in result[1]
 
 
+def test_summarise_threads_date_only_timestamp():
+    """Summaries truncate timestamps to date-only. Detail views keep full precision."""
+    threads = [{
+        "id": 1, "number": 1, "type": "post", "title": "T",
+        "category": "", "subcategory": "",
+        "created_at": "2026-03-21T09:15:32.123456+11:00",
+        "is_pinned": False, "is_private": False,
+        "is_endorsed": False, "is_answered": False, "is_locked": False,
+        "reply_count": 0, "vote_count": 0, "view_count": 0, "unresolved_count": 0,
+        "user": {"name": "Alice"},
+    }]
+    result = _summarise_threads(threads, course_id=1)
+    assert result[0]["created_at"] == "2026-03-21"
+
+
 def test_trim_comment_strips_bloat():
     comment = {
         "id": 1, "user_id": 2, "parent_id": None, "type": "comment",

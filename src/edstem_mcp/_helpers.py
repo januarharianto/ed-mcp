@@ -120,6 +120,9 @@ def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
     result = []
     for t in threads:
         summary = {k: t[k] for k in _THREAD_SUMMARY_KEYS if k in t}
+        # Truncate timestamp to date-only in summaries
+        if "created_at" in summary:
+            summary["created_at"] = str(summary["created_at"])[:10]
         for k in _THREAD_SUMMARY_BOOL_KEYS:
             if t.get(k):
                 summary[k] = True
