@@ -218,6 +218,84 @@ def test_trim_thread_detail_strips_bloat():
     assert "subcategory" not in result
 
 
+def test_trim_thread_detail_resolves_comment_users():
+    """Comments get user names from the response-level users array."""
+    data = {
+        "thread": {
+            "id": 1, "number": 42, "type": "question", "title": "Help",
+            "content": "<doc/>", "category": "General",
+            "course_id": 10, "created_at": "2025-01-01",
+            "is_pinned": False, "is_private": False,
+            "is_endorsed": False, "is_answered": True, "is_locked": False,
+            "is_anonymous": False, "reply_count": 2, "vote_count": 0,
+            "unresolved_count": 0,
+            "user": {"id": 5, "name": "Alice", "course_role": "admin"},
+            "answers": [{
+                "id": 20, "user_id": 6, "parent_id": None, "type": "answer",
+                "content": "<a/>", "is_endorsed": True, "is_private": False,
+                "is_resolved": False, "is_anonymous": False, "vote_count": 1,
+                "created_at": "2025-01-01",
+            }],
+            "comments": [{
+                "id": 10, "user_id": 7, "parent_id": None, "type": "comment",
+                "content": "<c/>", "is_endorsed": False, "is_private": False,
+                "is_resolved": False, "is_anonymous": False, "vote_count": 0,
+                "created_at": "2025-01-01",
+                "comments": [{
+                    "id": 11, "user_id": 5, "parent_id": 10, "type": "comment",
+                    "content": "<r/>", "is_endorsed": False, "is_private": False,
+                    "is_resolved": False, "is_anonymous": False, "vote_count": 0,
+                    "created_at": "2025-01-02",
+                }],
+            }],
+        },
+        "users": [
+            {"id": 5, "name": "Alice", "course_role": "admin"},
+            {"id": 6, "name": "Bob", "course_role": "staff"},
+            {"id": 7, "name": "Carol", "course_role": "student"},
+        ],
+    }
+    result = _trim_thread_detail(data)
+    # Answer should have user resolved from users array
+    assert result["answers"][0]["user"]["name"] == "Bob"
+    # Comment should have user resolved
+    assert result["comments"][0]["user"]["name"] == "Carol"
+    # Nested reply should also have user resolved
+    assert result["comments"][0]["comments"][0]["user"]["name"] == "Alice"
+    # Top-level users array should not be in output
+    assert "users" not in result
+
+
+def test_trim_thread_detail_anonymous_comment_has_no_user():
+    """Anonymous comments should not have user info even if user_id is present."""
+    data = {
+        "thread": {
+            "id": 1, "number": 42, "type": "question", "title": "Help",
+            "content": "<doc/>", "category": "General",
+            "course_id": 10, "created_at": "2025-01-01",
+            "is_pinned": False, "is_private": False,
+            "is_endorsed": False, "is_answered": False, "is_locked": False,
+            "is_anonymous": False, "reply_count": 1, "vote_count": 0,
+            "unresolved_count": 0,
+            "user": {"id": 5, "name": "Alice", "course_role": "admin"},
+            "answers": [],
+            "comments": [{
+                "id": 10, "user_id": 7, "parent_id": None, "type": "comment",
+                "content": "<c/>", "is_endorsed": False, "is_private": False,
+                "is_resolved": False, "is_anonymous": True, "vote_count": 0,
+                "created_at": "2025-01-01",
+            }],
+        },
+        "users": [
+            {"id": 5, "name": "Alice", "course_role": "admin"},
+            {"id": 7, "name": "Carol", "course_role": "student"},
+        ],
+    }
+    result = _trim_thread_detail(data)
+    # Anonymous comment should not have user info
+    assert "user" not in result["comments"][0]
+
+
 # ------------------------------------------------------------------
 # User & courses tools
 # ------------------------------------------------------------------

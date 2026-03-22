@@ -136,20 +136,28 @@ def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
     return result
 
 
-def _trim_comment(c: dict) -> dict:
+def _trim_comment(c: dict, user_lookup: dict[int, dict] | None = None) -> dict:
     """Strip a comment/answer to essential fields, recursing into replies."""
     trimmed = _compact({k: c[k] for k in _COMMENT_KEYS if k in c})
     strip_pii = _pii_enabled()
+    # Resolve user from the thread-level users array via user_id
     if c.get("user"):
         trimmed["user"] = (
             _strip_user_pii(c["user"]) if strip_pii
             else {k: c["user"][k] for k in _USER_KEYS if k in c["user"]}
         )
+    elif user_lookup and not c.get("is_anonymous") and c.get("user_id"):
+        user = user_lookup.get(c["user_id"])
+        if user:
+            trimmed["user"] = (
+                _strip_user_pii(user) if strip_pii
+                else {k: user[k] for k in _USER_KEYS if k in user}
+            )
     if strip_pii and "content" in trimmed:
         trimmed["content"] = _scrub_emails(trimmed["content"])
     nested = c.get("comments", [])
     if nested:
-        trimmed["comments"] = [_trim_comment(r) for r in nested]
+        trimmed["comments"] = [_trim_comment(r, user_lookup) for r in nested]
     return trimmed
 
 
@@ -165,9 +173,17 @@ def _trim_thread_detail(data: dict) -> dict:
             _strip_user_pii(t["user"]) if strip_pii
             else {k: t["user"][k] for k in _USER_KEYS if k in t["user"]}
         )
+    # Build user lookup — Ed API returns users at the response level (sibling
+    # of "thread"), not inside the thread object itself.
+    user_lookup: dict[int, dict] = {}
+    users = data.get("users") or t.get("users") or []
+    for u in users:
+        uid = u.get("id")
+        if uid:
+            user_lookup[uid] = u
     for key in ("answers", "comments"):
         if t.get(key):
-            trimmed[key] = [_trim_comment(c) for c in t[key]]
+            trimmed[key] = [_trim_comment(c, user_lookup) for c in t[key]]
     if strip_pii and "content" in trimmed:
         trimmed["content"] = _scrub_emails(trimmed["content"])
     return trimmed
