@@ -604,7 +604,7 @@ async def unendorse_thread(thread_id: int) -> str:
 
 @mcp.tool()
 async def get_enrollment_counts(course_id: int) -> str:
-    """Get a quick headcount of students, staff, and admins in a course. Use this to answer "how many students" questions without loading the full user list.
+    """Get a quick headcount for a course. Returns student count and total enrolled. Use this to answer "how many students" questions without loading the full user list. For per-role breakdowns (staff, admin), use list_users with a role filter.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -614,12 +614,11 @@ async def get_enrollment_counts(course_id: int) -> str:
         # Try lightweight enrollment endpoint first (no individual user data)
         try:
             result = await client.get_enrollment_stats(course_id)
-            # Return whatever the endpoint gives us, plus a total
-            counts = {k: v for k, v in result.items() if isinstance(v, int)}
-            if counts and "total" not in counts:
-                counts["total"] = sum(counts.values())
-            if counts:
-                return _json(counts)
+            if result.get("total_users") is not None:
+                return _json({
+                    "students": result.get("total_students", 0),
+                    "total": result.get("total_users", 0),
+                })
         except EdAPIError:
             pass  # Fall back to full user list
         # Fallback: fetch all users and count by role
