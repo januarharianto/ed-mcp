@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## v0.9.0 (2026-03-25)
+
+### Feat
+
+- add upload_file_url tool for uploading files from URLs
+- use lightweight enrollment endpoint for headcounts
+- add new_replies count to get_course_stats and document all thread filters
+
+### Fix
+
+- correct enrollment count total and update docstring
+- resolve user names on comments and answers in get_thread
+
+### Refactor
+
+- improve MCP tool docstrings for LLM discoverability
+- tune HTTP client connection pooling and timeouts
+
 ## v0.8.0 (2026-03-21)
 
 ### Refactor
