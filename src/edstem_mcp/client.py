@@ -312,6 +312,10 @@ class EdClient:
     # Users & analytics
     # ------------------------------------------------------------------
 
+    async def get_enrollment_stats(self, course_id: int) -> dict[str, Any]:
+        """Get lightweight enrollment counts (no individual user data)."""
+        return await self._get(f"/courses/{course_id}/analytics/enrollments")
+
     async def list_users(self, course_id: int) -> dict[str, Any]:
         """List users enrolled in a course."""
         return await self._get(f"/courses/{course_id}/analytics/users")

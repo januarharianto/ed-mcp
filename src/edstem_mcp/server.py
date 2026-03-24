@@ -610,8 +610,21 @@ async def get_enrollment_counts(course_id: int) -> str:
         course_id: The course ID (use list_courses to find it).
     """
     try:
-        result = await _get_client().list_users(course_id)
-        counts: dict[str, int] = {}
+        client = _get_client()
+        # Try lightweight enrollment endpoint first (no individual user data)
+        try:
+            result = await client.get_enrollment_stats(course_id)
+            # Return whatever the endpoint gives us, plus a total
+            counts = {k: v for k, v in result.items() if isinstance(v, int)}
+            if counts and "total" not in counts:
+                counts["total"] = sum(counts.values())
+            if counts:
+                return _json(counts)
+        except EdAPIError:
+            pass  # Fall back to full user list
+        # Fallback: fetch all users and count by role
+        result = await client.list_users(course_id)
+        counts = {}
         for u in result.get("users", []):
             role = u.get("course_role", u.get("role", "unknown"))
             counts[role] = counts.get(role, 0) + 1
