@@ -215,7 +215,7 @@ async def list_threads(
         limit: Max threads to return (default 50, max 100).
         offset: Pagination offset (use with limit to page through results).
         sort: Sort order — "new" for most recent, "top" for most voted, or "trending" for currently active.
-        filter: Narrow results — "unanswered" (no answer), "unresolved" (open follow-ups), "new_replies" (new comments after answer), "unread" (not yet read), "endorsed" (staff-endorsed), "starred" (starred by you), "watching" (threads you watch), "mine" (your threads), "following" (threads you follow), "private", "public", or "staff" (posted by staff).
+        filter: Narrow results. Triage filters: "unanswered", "unresolved", "new_replies". Personal filters: "unread", "starred", "watching", "mine", "following". Visibility filters: "private", "public", "staff", "endorsed". Invalid values silently return empty results.
         category: Filter by category name (case-insensitive). Only returns threads in this category.
     """
     try:
@@ -235,10 +235,10 @@ async def list_threads(
 
 @mcp.tool()
 async def get_thread(thread_id: int) -> str:
-    """Read a thread's full content, comments, and answers. Use this when you have a thread ID from list_threads or search_threads results. For looking up a thread by its number (e.g. #42), use get_course_thread instead.
+    """Read a thread's full content, comments, and answers. Use this when you have a thread ID (a large number like 2785693) from list_threads or search_threads results. For looking up a thread by its UI number (e.g. #42), use get_course_thread instead.
 
     Args:
-        thread_id: The global thread ID (from list_threads or search_threads results).
+        thread_id: The global thread ID (a large number from list_threads or search_threads, not the #number shown in the UI).
     """
     try:
         result = await _get_client().get_thread(thread_id)
@@ -290,7 +290,7 @@ async def accept_answer(thread_id: int, comment_id: int) -> str:
     """Mark a comment as the accepted answer on a question thread. Use get_thread first to find the comment_id of the correct answer.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
         comment_id: The ID of the comment to accept (from get_thread results).
     """
     try:
@@ -306,7 +306,7 @@ async def mark_duplicate(thread_id: int, original_thread_id: int) -> str:
     """Mark a thread as a duplicate of another thread. Use this when a question has already been answered elsewhere to point students to the original.
 
     Args:
-        thread_id: The global ID of the duplicate thread.
+        thread_id: The global ID of the duplicate thread (from list_threads or search_threads).
         original_thread_id: The global ID of the original thread it duplicates.
     """
     try:
@@ -321,7 +321,7 @@ async def unmark_duplicate(thread_id: int) -> str:
     """Remove the duplicate mark from a thread, restoring it as a standalone thread.
 
     Args:
-        thread_id: The global ID of the thread to unmark.
+        thread_id: The global ID of the thread to unmark (from list_threads or search_threads).
     """
     try:
         await _get_client().unmark_duplicate(thread_id)
@@ -338,7 +338,7 @@ async def search_threads(
     type: str | None = None,
     exclude_pinned: bool = False,
 ) -> str:
-    """Search threads in a course by keyword. Returns compact summaries. Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
+    """Search threads in a course by keyword (searches titles and body content). Returns compact summaries. Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -418,11 +418,11 @@ async def edit_thread(
     """Edit an existing thread's title, content, or category. Only provided fields are updated; omitted fields are left unchanged.
 
     Args:
-        thread_id: The global thread ID.
-        title: New title (leave empty to keep current).
-        content: New body in Ed XML format (leave empty to keep current).
-        category: New category name (leave empty to keep current; use list_categories for valid names).
-        subcategory: New subcategory name (leave empty to keep current).
+        thread_id: The global thread ID (from list_threads or search_threads).
+        title: New title (omit to keep current).
+        content: New body in Ed XML format (omit to keep current).
+        category: New category name (omit to keep current; use list_categories for valid names).
+        subcategory: New subcategory name (omit to keep current).
     """
     try:
         result = await _get_client().edit_thread(
@@ -499,7 +499,7 @@ async def delete_thread(thread_id: int) -> str:
     """Permanently delete a thread and all its comments. This cannot be undone.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
     """
     try:
         await _get_client().delete_thread(thread_id)
@@ -518,7 +518,7 @@ async def lock_thread(thread_id: int) -> str:
     """Lock a thread to prevent new comments. Useful after a question is resolved or a discussion is concluded.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
     """
     try:
         await _get_client().lock_thread(thread_id)
@@ -532,7 +532,7 @@ async def unlock_thread(thread_id: int) -> str:
     """Unlock a thread to allow new comments again.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
     """
     try:
         await _get_client().unlock_thread(thread_id)
@@ -546,7 +546,7 @@ async def pin_thread(thread_id: int) -> str:
     """Pin a thread so it stays at the top of the course feed. Good for important announcements or FAQs.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
     """
     try:
         await _get_client().pin_thread(thread_id)
@@ -560,7 +560,7 @@ async def unpin_thread(thread_id: int) -> str:
     """Unpin a thread from the top of the course feed.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
     """
     try:
         await _get_client().unpin_thread(thread_id)
@@ -574,7 +574,7 @@ async def endorse_thread(thread_id: int) -> str:
     """Endorse a thread with an instructor badge to signal it contains good content or a correct answer.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
     """
     try:
         await _get_client().endorse_thread(thread_id)
@@ -588,7 +588,7 @@ async def unendorse_thread(thread_id: int) -> str:
     """Remove the instructor endorsement badge from a thread.
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
     """
     try:
         await _get_client().unendorse_thread(thread_id)
@@ -806,9 +806,9 @@ async def reply_to_thread(
     """Reply to a thread with a comment or answer. Wrap content in Ed XML: <document version="2.0"><paragraph>Your text here</paragraph></document>
 
     Args:
-        thread_id: The global thread ID.
+        thread_id: The global thread ID (from list_threads or search_threads).
         content: Reply body in Ed XML format.
-        type: "comment" for a general reply, or "answer" for a direct answer to a question thread.
+        type: "comment" for a general reply, or "answer" for a direct answer (only works on "question" type threads).
         is_private: If true, only staff can see this reply.
         is_anonymous: If true, the author's name is hidden.
         parent_id: To nest this reply under an existing comment, pass that comment's ID here.
