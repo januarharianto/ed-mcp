@@ -734,6 +734,20 @@ async def upload_file(file_path: str) -> str:
 
 
 @mcp.tool()
+async def upload_file_url(url: str) -> str:
+    """Upload a file from a URL directly to Ed Discussion without downloading it locally first. Returns the Ed CDN URL you can use in thread content or comments.
+
+    Args:
+        url: Public URL of the file to upload (e.g. an image or document URL from the web).
+    """
+    try:
+        result = await _get_client().upload_file_url(url)
+        return _json({k: result[k] for k in _UPLOAD_KEYS if k in result})
+    except EdAPIError as e:
+        return f"Error: {e.message}"
+
+
+@mcp.tool()
 async def download_file(url: str) -> str:
     """Download a file from an Ed Discussion CDN URL to a temporary local path. Returns the local file path so you can read or view it.
 

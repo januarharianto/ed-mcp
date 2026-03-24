@@ -356,6 +356,10 @@ class EdClient:
             files={"attachment": (path.name, data, content_type)},
         )
 
+    async def upload_file_url(self, url: str) -> dict[str, Any]:
+        """Upload a file from a URL (no local download needed)."""
+        return await self._post("/files/url", json={"url": url})
+
     async def download_file(self, url: str, dest: Path) -> tuple[Path, str]:
         """Download a file from an Ed CDN URL. Returns (path, filename)."""
         async with httpx.AsyncClient(timeout=60.0) as http:
