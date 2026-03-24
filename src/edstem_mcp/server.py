@@ -111,7 +111,7 @@ async def list_courses(
 
 @mcp.tool()
 async def get_course_stats(course_id: int) -> str:
-    """Get a quick course overview for daily review. Returns enrollment count, number of unanswered questions, number of unresolved threads, and top categories by volume.
+    """Get a quick course overview for daily review. Returns enrollment count, number of unanswered questions, number of unresolved threads, number of threads with new follow-up replies, and top categories by volume.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -137,10 +137,11 @@ async def get_course_stats(course_id: int) -> str:
         stats_task = client.get_course_stats(course_id)
         unanswered_task = _count_filtered("unanswered")
         unresolved_task = _count_filtered("unresolved")
+        new_replies_task = _count_filtered("new_replies")
         recent_task = client.list_threads(course_id, limit=100, offset=0)
 
-        stats, unanswered, unresolved, recent = await asyncio.gather(
-            stats_task, unanswered_task, unresolved_task, recent_task
+        stats, unanswered, unresolved, new_replies, recent = await asyncio.gather(
+            stats_task, unanswered_task, unresolved_task, new_replies_task, recent_task
         )
 
         # Category distribution from recent threads
@@ -156,6 +157,7 @@ async def get_course_stats(course_id: int) -> str:
             "enrollment": enrollment,
             "unanswered": unanswered,
             "unresolved": unresolved,
+            "new_replies": new_replies,
             "top_categories": [
                 {"name": name, "count": count} for name, count in top_categories
             ],
@@ -213,7 +215,7 @@ async def list_threads(
         limit: Max threads to return (default 50, max 100).
         offset: Pagination offset (use with limit to page through results).
         sort: Sort order — "new" for most recent, "top" for most voted, or "trending" for currently active.
-        filter: Narrow results — "unanswered" for questions needing a response, "unresolved" for threads with open follow-ups, "mine" for your own threads, "following" for threads you follow.
+        filter: Narrow results — "unanswered" (no answer), "unresolved" (open follow-ups), "new_replies" (new comments after answer), "unread" (not yet read), "endorsed" (staff-endorsed), "starred" (starred by you), "watching" (threads you watch), "mine" (your threads), "following" (threads you follow), "private", "public", or "staff" (posted by staff).
         category: Filter by category name (case-insensitive). Only returns threads in this category.
     """
     try:

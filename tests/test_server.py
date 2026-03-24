@@ -340,6 +340,7 @@ async def test_get_course_stats(mock_client):
     assert result["enrollment"] == 200
     assert "unanswered" in result
     assert "unresolved" in result
+    assert "new_replies" in result
     assert result["top_categories"][0]["name"] == "General"
     assert result["top_categories"][0]["count"] == 2
 
