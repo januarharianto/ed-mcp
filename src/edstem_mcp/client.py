@@ -53,7 +53,8 @@ class EdClient:
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/json",
             },
-            timeout=30.0,
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
 
     async def close(self) -> None:
