@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 
+import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from edstem_mcp.client import EdAPIError
+from edstem_mcp import _index
 from edstem_mcp.server import (
     _pii_enabled,
     _scrub_emails,
@@ -35,7 +39,9 @@ from edstem_mcp.server import (
     mark_duplicate,
     pin_thread,
     reply_to_thread,
+    search_index,
     search_threads,
+    sync_index,
     unlock_thread,
     unmark_duplicate,
     unpin_thread,
@@ -858,3 +864,265 @@ async def test_list_users_pii_disabled(mock_client, monkeypatch):
     assert result["users"][0]["id"] == 42
     assert result["users"][0]["email"] == "a@b.com"
     assert set(result["users"][0].keys()) == {"id", "name", "course_role", "email"}
+
+
+# ------------------------------------------------------------------
+# Local Search Index tools
+# ------------------------------------------------------------------
+
+
+async def test_sync_index(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    mock_client.get_discussion_threads_json.return_value = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Thread 1", "text": "Content 1",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    result = _parse(await sync_index(1))
+    assert result["threads_indexed"] == 1
+    assert result["course_id"] == 1
+    assert "last_synced" in result
+    # Cache file exists
+    assert (tmp_path / "1.json.gz").exists()
+    assert (tmp_path / "1.meta.json").exists()
+    # Index is loaded
+    assert _index.is_loaded(1)
+    _index.clear(1)
+
+
+async def test_search_index(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Assignment 1", "text": "Help with assignment",
+            "category": "Assignments", "subcategory": "", "type": "question",
+            "votes": 0, "views": 10, "unique_views": 5,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "answers": [
+                {"text": "Check the notes", "user": {"name": "Prof", "email": "p@t.com", "role": "admin"},
+                 "endorsed": True, "comments": []},
+            ],
+            "comments": [],
+        },
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/101",
+            "number": 2, "title": "Exam question", "text": "When is the exam",
+            "category": "General", "subcategory": "", "type": "question",
+            "votes": 0, "views": 5, "unique_views": 3,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-02T00:00:00",
+            "user": {"name": "Bob", "email": "b@c.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    # Build index directly
+    _index.build(1, threads)
+
+    result = _parse(await search_index(1, "assignment"))
+    assert len(result["results"]) == 1
+    assert result["results"][0]["title"] == "Assignment 1"
+
+    # Filter by has_staff_reply
+    result = _parse(await search_index(1, "assignment", has_staff_reply=True))
+    assert len(result["results"]) == 1
+
+    # Filter by category
+    result = _parse(await search_index(1, "exam", category="General"))
+    assert len(result["results"]) == 1
+
+    _index.clear(1)
+
+
+# ------------------------------------------------------------------
+# Write-through index updates
+# ------------------------------------------------------------------
+
+
+async def test_reply_write_through(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    # Build an index with one thread
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Help", "text": "Need help",
+            "category": "General", "subcategory": "", "type": "question",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    _index.build(1, threads)
+
+    # Mock the reply and subsequent get_thread for write-through
+    mock_client.reply_to_thread.return_value = {
+        "comment": {"id": 50, "thread_id": 100, "type": "comment", "course_id": 1},
+    }
+    mock_client.get_thread.return_value = {
+        "thread": {
+            "id": 100, "number": 1, "title": "Help", "content": "<doc>Need help</doc>",
+            "category": "General", "subcategory": "", "type": "question",
+            "course_id": 1, "is_answered": True, "is_endorsed": False,
+            "is_pinned": False, "is_private": False, "is_locked": False,
+            "is_anonymous": False, "reply_count": 1, "vote_count": 0,
+            "view_count": 10, "unresolved_count": 0,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"id": 1, "name": "Alice", "course_role": "student"},
+            "comments": [
+                {
+                    "id": 50, "content": "<doc>Here is the answer about deadlines</doc>",
+                    "user": {"id": 2, "name": "Prof", "course_role": "admin"},
+                    "type": "comment", "comments": [],
+                }
+            ],
+            "answers": [],
+        },
+        "users": [],
+    }
+
+    await reply_to_thread(100, "<doc>Here is the answer about deadlines</doc>")
+
+    # The index should now contain the updated thread with staff reply
+    result = _index.search(1, "deadlines")
+    assert len(result["results"]) == 1
+    _index.clear(1)
+
+
+async def test_delete_write_through(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "To be deleted", "text": "Delete me",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    _index.build(1, threads)
+    mock_client.delete_thread.return_value = {}
+
+    await delete_thread(100)
+
+    # Thread should be removed from the index
+    result = _index.search(1, "deleted")
+    assert len(result["results"]) == 0
+    _index.clear(1)
+
+
+async def test_search_index_auto_loads_from_cache(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    # Write a cache file directly
+    import gzip
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Cached thread", "text": "From cache",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    with gzip.open(tmp_path / "1.json.gz", "wt", encoding="utf-8") as f:
+        json.dump(threads, f)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    (tmp_path / "1.meta.json").write_text(json.dumps({"last_synced": now, "thread_count": 1}))
+
+    # No index in memory — search should auto-load from cache (and meta is fresh, no re-sync)
+    assert not _index.is_loaded(1)
+    result = _parse(await search_index(1, "cached"))
+    assert len(result["results"]) == 1
+    assert result["results"][0]["title"] == "Cached thread"
+    assert "last_synced" in result
+    _index.clear(1)
+
+
+async def test_search_index_auto_syncs_when_no_cache(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    mock_client.get_discussion_threads_json.return_value = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Fresh sync", "text": "Just synced",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+
+    # No index, no cache — search should auto-sync
+    result = _parse(await search_index(1, "synced"))
+    assert len(result["results"]) == 1
+    mock_client.get_discussion_threads_json.assert_called_once_with(1)
+    _index.clear(1)
+
+
+async def test_search_index_corrupted_cache(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    # Write a corrupted cache file
+    (tmp_path / "1.json.gz").write_bytes(b"not valid gzip")
+
+    mock_client.get_discussion_threads_json.return_value = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "After corruption", "text": "Recovered",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+
+    # Should delete corrupted cache, auto-sync, and return results
+    result = _parse(await search_index(1, "recovered"))
+    assert len(result["results"]) == 1
+    _index.clear(1)
+
+
+# ------------------------------------------------------------------
+# Bulk endpoint client method
+# ------------------------------------------------------------------
+
+
+async def test_get_discussion_threads_json():
+    """Bulk endpoint returns a bare list and uses 120s timeout."""
+    mock_response = MagicMock()
+    mock_response.is_success = True
+    mock_response.json.return_value = [{"number": 1, "title": "Thread 1"}]
+
+    with patch("edstem_mcp.client.EdClient.__init__", return_value=None):
+        from edstem_mcp.client import EdClient
+        client = EdClient.__new__(EdClient)
+        client._client = AsyncMock()
+        client._client.request.return_value = mock_response
+        client.base_url = "https://edstem.org/api"
+
+        result = await client.get_discussion_threads_json(31798)
+        assert result == [{"number": 1, "title": "Thread 1"}]
+        client._client.request.assert_called_once()
+        # Verify POST method and timeout
+        call_args = client._client.request.call_args
+        assert call_args.args[0] == "POST"
+        assert call_args.kwargs.get("timeout") is not None

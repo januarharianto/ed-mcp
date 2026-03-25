@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
+import json
 import logging
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -29,6 +33,7 @@ from edstem_mcp._helpers import (
     _trim_comment,
     _trim_thread_detail,
 )
+from edstem_mcp import _index
 from edstem_mcp.client import EdAPIError, EdClient
 
 logger = logging.getLogger(__name__)
@@ -45,6 +50,12 @@ def _get_client() -> EdClient:
         _client = EdClient()
     return _client
 
+
+def _cache_dir() -> Path:
+    """Return the cache directory for index data."""
+    base = Path(os.environ.get("ED_INDEX_PATH", "~/.cache/edstem-mcp")).expanduser()
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 # ======================================================================
@@ -338,7 +349,7 @@ async def search_threads(
     type: str | None = None,
     exclude_pinned: bool = False,
 ) -> str:
-    """Search threads in a course by keyword (searches titles and body content). Returns compact summaries. Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
+    """Search threads in a course by keyword (searches titles and body content). Returns compact summaries. For faster ranked search with stemming and filtering, use search_index (requires sync_index first). Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -397,6 +408,14 @@ async def create_thread(
             is_anonymous=is_anonymous,
         )
         t = result.get("thread", result)
+        # Write-through: index the new thread
+        if _index.is_loaded(course_id):
+            try:
+                raw = await _get_client().get_thread(t["id"])
+                _index.update_thread(course_id, str(t["id"]), raw)
+                _invalidate_cache(course_id)
+            except Exception:
+                logger.debug("Write-through failed for thread %s", t["id"], exc_info=True)
         return _json({
             "id": t.get("id"),
             "number": t.get("number"),
@@ -436,6 +455,8 @@ async def edit_thread(
         resp: dict = {"id": t.get("id"), "number": t.get("number"), "title": t.get("title")}
         if t.get("course_id") and t.get("id"):
             resp["url"] = _thread_url(t["course_id"], t["id"])
+        # Write-through: update index
+        await _write_through(thread_id)
         return _json(resp)
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -503,6 +524,12 @@ async def delete_thread(thread_id: int) -> str:
     """
     try:
         await _get_client().delete_thread(thread_id)
+        # Write-through: remove from index
+        tid = str(thread_id)
+        cid = _index.get_course_for_thread(tid)
+        if cid is not None:
+            _index.delete_thread(cid, tid)
+            _invalidate_cache(cid)
         return "Thread deleted."
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -852,6 +879,8 @@ async def reply_to_thread(
         resp: dict = {"id": c.get("id"), "thread_id": c.get("thread_id"), "type": c.get("type")}
         if c.get("course_id"):
             resp["url"] = _thread_url(c["course_id"], c.get("thread_id", thread_id))
+        # Write-through: update index
+        await _write_through(thread_id)
         return _json(resp)
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -1102,6 +1131,146 @@ async def get_attendance_analytics(course_id: int) -> str:
         return _json({"sessions": sessions, "check_ins": check_ins})
     except EdAPIError as e:
         return f"Error: {e.message}"
+
+
+# ======================================================================
+# Local Search Index
+# ======================================================================
+
+
+def _invalidate_cache(course_id: int) -> None:
+    """Delete the meta file so the next search_index triggers a re-sync."""
+    meta_path = _cache_dir() / f"{course_id}.meta.json"
+    meta_path.unlink(missing_ok=True)
+
+
+async def _write_through(thread_id: int) -> None:
+    """Re-fetch a thread and update the local index (best-effort)."""
+    try:
+        course_id = _index.get_course_for_thread(str(thread_id))
+        if course_id is None or not _index.is_loaded(course_id):
+            return
+        raw = await _get_client().get_thread(thread_id)
+        _index.update_thread(course_id, str(thread_id), raw)
+        _invalidate_cache(course_id)
+    except Exception:
+        logger.debug("Write-through failed for thread %s", thread_id, exc_info=True)
+
+
+@mcp.tool()
+async def sync_index(course_id: int) -> str:
+    """Sync the local search index for a course. Downloads all threads and builds an in-memory search index for fast local search. Takes ~2-3 seconds. Call this before search_index, or to refresh stale data.
+
+    Args:
+        course_id: The course ID (use list_courses to find it).
+    """
+    import time
+    start = time.monotonic()
+    try:
+        threads = await _get_client().get_discussion_threads_json(course_id)
+    except EdAPIError as e:
+        if e.status_code == 403:
+            return "Error: Index sync failed. This endpoint may require staff or admin access."
+        return f"Error: {e.message}"
+    except Exception as e:
+        return f"Error: Failed to download thread data. {e}"
+
+    # Cache to disk
+    cache = _cache_dir()
+    cache_path = cache / f"{course_id}.json.gz"
+    with gzip.open(cache_path, "wt", encoding="utf-8") as f:
+        json.dump(threads, f)
+
+    # Build in-memory index
+    count = _index.build(course_id, threads)
+
+    now = datetime.now(timezone.utc).isoformat()
+    meta = {"last_synced": now, "thread_count": count}
+    (cache / f"{course_id}.meta.json").write_text(json.dumps(meta))
+
+    elapsed = round(time.monotonic() - start, 2)
+    return _json({"course_id": course_id, "threads_indexed": count,
+                   "elapsed_seconds": elapsed, "last_synced": now})
+
+
+@mcp.tool()
+async def search_index(
+    course_id: int,
+    query: str,
+    limit: int = 20,
+    category: str | None = None,
+    type: str | None = None,
+    has_staff_reply: bool | None = None,
+    is_answered: bool | None = None,
+) -> str:
+    """Search the local index for a course. Returns BM25-ranked results with full content for top results. If no index exists, rebuilds from cache or triggers a sync.
+
+    Args:
+        course_id: The course ID (use list_courses to find it).
+        query: Search query. Supports phrases ("peer review"), prefix (assign*), boolean (AND/OR/NOT), and column-specific (title:exam, staff_replies:deadline). Implicit AND between terms.
+        limit: Max results (default 20).
+        category: Filter by category name (e.g. "Assignments").
+        type: Filter by thread type — "question", "post", or "announcement".
+        has_staff_reply: If true, only threads with staff/admin replies.
+        is_answered: If true, only answered threads.
+    """
+    _STALE_MINUTES = 30
+
+    # Check if a re-sync is needed (stale or not loaded)
+    needs_sync = False
+    cache = _cache_dir()
+    meta_path = cache / f"{course_id}.meta.json"
+
+    if not _index.is_loaded(course_id):
+        # Try loading from cache first
+        cache_path = cache / f"{course_id}.json.gz"
+        if cache_path.exists():
+            try:
+                with gzip.open(cache_path, "rt", encoding="utf-8") as f:
+                    threads = json.load(f)
+                _index.build(course_id, threads)
+            except (json.JSONDecodeError, OSError):
+                cache_path.unlink(missing_ok=True)
+                meta_path.unlink(missing_ok=True)
+
+    if not _index.is_loaded(course_id):
+        needs_sync = True
+    elif meta_path.exists():
+        # Check staleness
+        try:
+            meta = json.loads(meta_path.read_text())
+            last = datetime.fromisoformat(meta["last_synced"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - last).total_seconds() / 60
+            if age > _STALE_MINUTES:
+                needs_sync = True
+        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+            needs_sync = True
+
+    if needs_sync:
+        sync_result = await sync_index(course_id)
+        if sync_result.startswith("Error"):
+            # If sync fails but we have a stale index, use it anyway
+            if not _index.is_loaded(course_id):
+                return sync_result
+
+    result = _index.search(
+        course_id, query, limit=limit,
+        category=category, type=type,
+        has_staff_reply=has_staff_reply,
+        is_answered=is_answered,
+    )
+
+    # Add last_synced from meta
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            result["last_synced"] = meta.get("last_synced")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return _json(result)
 
 
 # ======================================================================
