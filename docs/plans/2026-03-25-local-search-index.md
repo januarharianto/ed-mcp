@@ -34,7 +34,17 @@
 # tests/test_index.py
 """Tests for the local search index module."""
 
+import pytest
 from edstem_mcp._index import _collect_replies, _count_recursive
+from edstem_mcp import _index as _index_mod
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_index():
+    """Clear all index state after each test."""
+    yield
+    for cid in list(_index_mod._dbs.keys()):
+        _index_mod.clear(cid)
 
 
 def test_collect_replies_flat():
@@ -83,7 +93,7 @@ def test_count_recursive():
         {"comments": [{"comments": [{"comments": []}]}]},
         {"comments": []},
     ]
-    assert _count_recursive(items) == 3  # 2 top-level + 1 nested
+    assert _count_recursive(items) == 4  # 2 top-level + 1 child + 1 grandchild
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -327,7 +337,7 @@ def test_build_and_search():
     assert not is_loaded(1)
 
 
-def test_search_empty_query_returns_all():
+def test_search_match_all():
     threads = [
         {
             "url": "https://edstem.org/au/courses/1/discussion/100",
@@ -341,9 +351,9 @@ def test_search_empty_query_returns_all():
         },
     ]
     build(1, threads)
-    # Empty query should still work (return all)
+    # Empty/star query returns all threads (bypasses MATCH)
     result = search(1, "*")
-    assert len(result["results"]) >= 1
+    assert len(result["results"]) == 1
     clear(1)
 
 
@@ -427,13 +437,6 @@ _COLUMNS = (
     "comment_count", "votes", "views", "unique_views", "created_at",
 )
 
-_FULL_RESULT_KEYS = {
-    "thread_id", "number", "title", "body", "replies", "url",
-    "category", "subcategory", "type", "user_name", "user_role",
-    "has_staff_reply", "is_answered", "endorsed",
-    "comment_count", "votes", "views", "unique_views", "created_at",
-}
-
 _SUMMARY_RESULT_KEYS = {
     "thread_id", "number", "title", "url",
     "category", "type", "user_name",
@@ -466,6 +469,7 @@ def _normalise_bulk(thread: dict, course_id: int) -> tuple:
     if _pii_enabled():
         body = _scrub_emails(thread.get("text", ""))
         replies = _scrub_emails(replies)
+        staff_replies = _scrub_emails(staff_replies)
     else:
         body = thread.get("text", "")
 
@@ -516,6 +520,7 @@ def _normalise_api(raw: dict) -> tuple:
     if _pii_enabled():
         body = _scrub_emails(body)
         replies = _scrub_emails(replies)
+        staff_replies = _scrub_emails(staff_replies)
 
     has_staff_reply = bool(staff_replies)
     is_answered = t.get("is_answered", False)
@@ -589,8 +594,9 @@ def search(
         return {"results": [], "error": "Index not loaded for this course."}
 
     # Build WHERE clauses for UNINDEXED filters
-    where_parts = ["threads MATCH ?"]
-    params: list = [query]
+    match_all = query.strip() in ("*", "")
+    where_parts: list[str] = [] if match_all else ["threads MATCH ?"]
+    params: list = [] if match_all else [query]
 
     if category is not None:
         where_parts.append("category = ?")
@@ -605,16 +611,25 @@ def search(
         where_parts.append("is_answered = ?")
         params.append(str(is_answered).lower())
 
-    where = " AND ".join(where_parts)
+    where = " AND ".join(where_parts) if where_parts else "1=1"
     col_list = ", ".join(_COLUMNS)
-    sql = f"""
-        SELECT {col_list}, {_BM25_EXPR} AS score,
-               snippet(threads, 5, '<b>', '</b>', '...', 30) AS snippet
-        FROM threads
-        WHERE {where}
-        ORDER BY score
-        LIMIT ?
-    """
+    if match_all:
+        sql = f"""
+            SELECT {col_list}, 0.0 AS score, '' AS snippet
+            FROM threads
+            WHERE {where}
+            ORDER BY created_at DESC
+            LIMIT ?
+        """
+    else:
+        sql = f"""
+            SELECT {col_list}, {_BM25_EXPR} AS score,
+                   snippet(threads, -1, '<b>', '</b>', '...', 30) AS snippet
+            FROM threads
+            WHERE {where}
+            ORDER BY score
+            LIMIT ?
+        """
     params.append(limit)
 
     try:
@@ -1151,7 +1166,19 @@ In `reply_to_thread`, after the return statement is built but before returning, 
         await _write_through(thread_id)
 ```
 
-Similarly in `edit_thread` (after building the response), `create_thread` (using the new thread ID from the response).
+Similarly in `edit_thread` (after building the response).
+
+For `create_thread`, add custom write-through (cannot use `_write_through` because the new thread is not in `_course_map`):
+
+```python
+        # Write-through: index the new thread
+        if _index.is_loaded(course_id):
+            try:
+                raw = await _get_client().get_thread(t["id"])
+                _index.update_thread(course_id, str(t["id"]), raw)
+            except Exception:
+                pass
+```
 
 For `delete_thread`, add before the return:
 
@@ -1168,12 +1195,122 @@ For `delete_thread`, add before the return:
 Run: `uv run pytest tests/test_server.py::test_reply_write_through -v`
 Expected: PASS
 
-- [ ] **Step 6: Run full test suite**
+- [ ] **Step 6: Write additional write-through tests**
+
+Add to `tests/test_server.py`:
+
+```python
+async def test_delete_write_through(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "To be deleted", "text": "Delete me",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    _index.build(1, threads)
+    mock_client.delete_thread.return_value = {}
+
+    await delete_thread(100)
+
+    # Thread should be removed from the index
+    result = _index.search(1, "deleted")
+    assert len(result["results"]) == 0
+    _index.clear(1)
+
+
+async def test_search_index_auto_loads_from_cache(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    # Write a cache file directly
+    import gzip
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Cached thread", "text": "From cache",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    with gzip.open(tmp_path / "1.json.gz", "wt", encoding="utf-8") as f:
+        json.dump(threads, f)
+    (tmp_path / "1.meta.json").write_text('{"last_synced": "2026-01-01T00:00:00", "thread_count": 1}')
+
+    # No index in memory — search should auto-load from cache
+    assert not _index.is_loaded(1)
+    result = _parse(await search_index(1, "cached"))
+    assert len(result["results"]) == 1
+    assert result["results"][0]["title"] == "Cached thread"
+    assert "last_synced" in result
+    _index.clear(1)
+
+
+async def test_search_index_auto_syncs_when_no_cache(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    mock_client.get_discussion_threads_json.return_value = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Fresh sync", "text": "Just synced",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+
+    # No index, no cache — search should auto-sync
+    result = _parse(await search_index(1, "synced"))
+    assert len(result["results"]) == 1
+    mock_client.get_discussion_threads_json.assert_called_once_with(1)
+    _index.clear(1)
+
+
+async def test_search_index_corrupted_cache(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    # Write a corrupted cache file
+    (tmp_path / "1.json.gz").write_bytes(b"not valid gzip")
+
+    mock_client.get_discussion_threads_json.return_value = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "After corruption", "text": "Recovered",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+
+    # Should delete corrupted cache, auto-sync, and return results
+    result = _parse(await search_index(1, "recovered"))
+    assert len(result["results"]) == 1
+    _index.clear(1)
+```
+
+- [ ] **Step 7: Run all new tests**
+
+Run: `uv run pytest tests/test_server.py -k "write_through or auto_loads or auto_syncs or corrupted" -v`
+Expected: PASS
+
+- [ ] **Step 8: Run full test suite**
 
 Run: `uv run pytest -v`
 Expected: All PASS
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/edstem_mcp/server.py tests/test_server.py
