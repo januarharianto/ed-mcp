@@ -349,7 +349,7 @@ async def search_threads(
     type: str | None = None,
     exclude_pinned: bool = False,
 ) -> str:
-    """Search threads in a course by keyword (searches titles and body content). Returns compact summaries. Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
+    """Search threads in a course by keyword (searches titles and body content). Returns compact summaries. For faster ranked search with stemming and filtering, use search_index (requires sync_index first). Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
 
     Args:
         course_id: The course ID (use list_courses to find it).
