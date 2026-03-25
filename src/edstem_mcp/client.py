@@ -360,6 +360,21 @@ class EdClient:
         """Upload a file from a URL (no local download needed)."""
         return await self._post("/files/url", json={"url": url})
 
+    async def get_discussion_threads_json(self, course_id: int) -> list[dict[str, Any]]:
+        """Download all threads for a course via the bulk analytics endpoint.
+
+        Returns a bare list (not wrapped in a dict). Uses a longer timeout
+        since this endpoint returns all threads at once.
+        """
+        resp = await self._client.get(
+            f"{self.base_url}/courses/{course_id}/analytics/discussion_threads.json",
+            timeout=httpx.Timeout(120.0, connect=10.0),
+        )
+        if not resp.is_success:
+            error_cls = _ERROR_MAP.get(resp.status_code, EdAPIError)
+            raise error_cls(resp.status_code, resp.text[:200])
+        return resp.json()
+
     async def download_file(self, url: str, dest: Path) -> tuple[Path, str]:
         """Download a file from an Ed CDN URL. Returns (path, filename)."""
         async with httpx.AsyncClient(timeout=60.0) as http:
