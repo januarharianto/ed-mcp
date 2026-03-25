@@ -229,8 +229,23 @@ def is_loaded(course_id: int) -> bool:
     return course_id in _dbs
 
 
+def get_course_for_thread(thread_id: str) -> int | None:
+    """Look up which course a thread belongs to."""
+    return _course_map.get(thread_id)
+
+
 def build(course_id: int, threads: list[dict]) -> int:
     """Build in-memory FTS5 index from bulk JSON threads."""
+    # Close old connection if rebuilding
+    old_conn = _dbs.pop(course_id, None)
+    if old_conn is not None:
+        old_conn.close()
+    # Clean up stale _course_map entries from the old index
+    old_rowid_map = _rowid_maps.pop(course_id, None)
+    if old_rowid_map:
+        for tid in old_rowid_map:
+            _course_map.pop(tid, None)
+
     conn = sqlite3.connect(":memory:")
     conn.execute(_CREATE_TABLE)
     placeholders = ", ".join("?" * len(_COLUMNS))

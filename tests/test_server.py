@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from edstem_mcp.client import EdAPIError
 from edstem_mcp import _index
 from edstem_mcp.server import (
@@ -1101,10 +1104,6 @@ async def test_search_index_corrupted_cache(mock_client, tmp_path, monkeypatch):
 # ------------------------------------------------------------------
 # Bulk endpoint client method
 # ------------------------------------------------------------------
-
-
-import httpx
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 async def test_get_discussion_threads_json():

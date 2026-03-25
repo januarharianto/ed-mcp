@@ -413,8 +413,9 @@ async def create_thread(
             try:
                 raw = await _get_client().get_thread(t["id"])
                 _index.update_thread(course_id, str(t["id"]), raw)
+                _invalidate_cache(course_id)
             except Exception:
-                pass
+                logger.debug("Write-through failed for thread %s", t["id"], exc_info=True)
         return _json({
             "id": t.get("id"),
             "number": t.get("number"),
@@ -525,9 +526,10 @@ async def delete_thread(thread_id: int) -> str:
         await _get_client().delete_thread(thread_id)
         # Write-through: remove from index
         tid = str(thread_id)
-        cid = _index._course_map.get(tid)
+        cid = _index.get_course_for_thread(tid)
         if cid is not None:
             _index.delete_thread(cid, tid)
+            _invalidate_cache(cid)
         return "Thread deleted."
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -1136,16 +1138,23 @@ async def get_attendance_analytics(course_id: int) -> str:
 # ======================================================================
 
 
+def _invalidate_cache(course_id: int) -> None:
+    """Delete the meta file so the next search_index triggers a re-sync."""
+    meta_path = _cache_dir() / f"{course_id}.meta.json"
+    meta_path.unlink(missing_ok=True)
+
+
 async def _write_through(thread_id: int) -> None:
     """Re-fetch a thread and update the local index (best-effort)."""
     try:
-        course_id = _index._course_map.get(str(thread_id))
+        course_id = _index.get_course_for_thread(str(thread_id))
         if course_id is None or not _index.is_loaded(course_id):
             return
         raw = await _get_client().get_thread(thread_id)
         _index.update_thread(course_id, str(thread_id), raw)
+        _invalidate_cache(course_id)
     except Exception:
-        pass  # Write-through is best-effort
+        logger.debug("Write-through failed for thread %s", thread_id, exc_info=True)
 
 
 @mcp.tool()
@@ -1254,8 +1263,6 @@ async def search_index(
     )
 
     # Add last_synced from meta
-    cache = _cache_dir()
-    meta_path = cache / f"{course_id}.meta.json"
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text())
