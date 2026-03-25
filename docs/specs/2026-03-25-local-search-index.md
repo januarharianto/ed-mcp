@@ -10,7 +10,7 @@ Add a local SQLite FTS5 in-memory search index. Two new MCP tools (`sync_index`,
 
 ## Bulk endpoint
 
-`GET /courses/{course_id}/analytics/discussion_threads.json` returns all threads for a course as a bare JSON list (~950KB for 276 threads). Each thread includes:
+`POST /courses/{course_id}/analytics/discussion_threads.json` returns all threads for a course as a bare JSON list (~950KB for 276 threads). Each thread includes:
 
 ```json
 {
