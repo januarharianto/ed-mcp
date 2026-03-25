@@ -858,3 +858,33 @@ async def test_list_users_pii_disabled(mock_client, monkeypatch):
     assert result["users"][0]["id"] == 42
     assert result["users"][0]["email"] == "a@b.com"
     assert set(result["users"][0].keys()) == {"id", "name", "course_role", "email"}
+
+
+# ------------------------------------------------------------------
+# Bulk endpoint client method
+# ------------------------------------------------------------------
+
+
+import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+async def test_get_discussion_threads_json():
+    """Bulk endpoint returns a bare list and uses 120s timeout."""
+    mock_response = MagicMock()
+    mock_response.is_success = True
+    mock_response.json.return_value = [{"number": 1, "title": "Thread 1"}]
+
+    with patch("edstem_mcp.client.EdClient.__init__", return_value=None):
+        from edstem_mcp.client import EdClient
+        client = EdClient.__new__(EdClient)
+        client._client = AsyncMock()
+        client._client.get.return_value = mock_response
+        client.base_url = "https://edstem.org/api"
+
+        result = await client.get_discussion_threads_json(31798)
+        assert result == [{"number": 1, "title": "Thread 1"}]
+        client._client.get.assert_called_once()
+        # Verify the timeout was 120s
+        call_kwargs = client._client.get.call_args
+        assert call_kwargs.kwargs.get("timeout") is not None
