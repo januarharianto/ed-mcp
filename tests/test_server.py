@@ -1039,9 +1039,11 @@ async def test_search_index_auto_loads_from_cache(mock_client, tmp_path, monkeyp
     ]
     with gzip.open(tmp_path / "1.json.gz", "wt", encoding="utf-8") as f:
         json.dump(threads, f)
-    (tmp_path / "1.meta.json").write_text('{"last_synced": "2026-01-01T00:00:00", "thread_count": 1}')
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    (tmp_path / "1.meta.json").write_text(json.dumps({"last_synced": now, "thread_count": 1}))
 
-    # No index in memory — search should auto-load from cache
+    # No index in memory — search should auto-load from cache (and meta is fresh, no re-sync)
     assert not _index.is_loaded(1)
     result = _parse(await search_index(1, "cached"))
     assert len(result["results"]) == 1

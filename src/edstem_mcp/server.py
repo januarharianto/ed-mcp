@@ -1205,11 +1205,16 @@ async def search_index(
         has_staff_reply: If true, only threads with staff/admin replies.
         is_answered: If true, only answered threads.
     """
-    # Auto-load from cache if not in memory
+    _STALE_MINUTES = 30
+
+    # Check if a re-sync is needed (stale or not loaded)
+    needs_sync = False
+    cache = _cache_dir()
+    meta_path = cache / f"{course_id}.meta.json"
+
     if not _index.is_loaded(course_id):
-        cache = _cache_dir()
+        # Try loading from cache first
         cache_path = cache / f"{course_id}.json.gz"
-        meta_path = cache / f"{course_id}.meta.json"
         if cache_path.exists():
             try:
                 with gzip.open(cache_path, "rt", encoding="utf-8") as f:
@@ -1219,11 +1224,27 @@ async def search_index(
                 cache_path.unlink(missing_ok=True)
                 meta_path.unlink(missing_ok=True)
 
-    # Auto-sync if still not loaded
     if not _index.is_loaded(course_id):
+        needs_sync = True
+    elif meta_path.exists():
+        # Check staleness
+        try:
+            meta = json.loads(meta_path.read_text())
+            last = datetime.fromisoformat(meta["last_synced"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - last).total_seconds() / 60
+            if age > _STALE_MINUTES:
+                needs_sync = True
+        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+            needs_sync = True
+
+    if needs_sync:
         sync_result = await sync_index(course_id)
         if sync_result.startswith("Error"):
-            return sync_result
+            # If sync fails but we have a stale index, use it anyway
+            if not _index.is_loaded(course_id):
+                return sync_result
 
     result = _index.search(
         course_id, query, limit=limit,
