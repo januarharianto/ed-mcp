@@ -408,6 +408,13 @@ async def create_thread(
             is_anonymous=is_anonymous,
         )
         t = result.get("thread", result)
+        # Write-through: index the new thread
+        if _index.is_loaded(course_id):
+            try:
+                raw = await _get_client().get_thread(t["id"])
+                _index.update_thread(course_id, str(t["id"]), raw)
+            except Exception:
+                pass
         return _json({
             "id": t.get("id"),
             "number": t.get("number"),
@@ -447,6 +454,8 @@ async def edit_thread(
         resp: dict = {"id": t.get("id"), "number": t.get("number"), "title": t.get("title")}
         if t.get("course_id") and t.get("id"):
             resp["url"] = _thread_url(t["course_id"], t["id"])
+        # Write-through: update index
+        await _write_through(thread_id)
         return _json(resp)
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -514,6 +523,11 @@ async def delete_thread(thread_id: int) -> str:
     """
     try:
         await _get_client().delete_thread(thread_id)
+        # Write-through: remove from index
+        tid = str(thread_id)
+        cid = _index._course_map.get(tid)
+        if cid is not None:
+            _index.delete_thread(cid, tid)
         return "Thread deleted."
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -863,6 +877,8 @@ async def reply_to_thread(
         resp: dict = {"id": c.get("id"), "thread_id": c.get("thread_id"), "type": c.get("type")}
         if c.get("course_id"):
             resp["url"] = _thread_url(c["course_id"], c.get("thread_id", thread_id))
+        # Write-through: update index
+        await _write_through(thread_id)
         return _json(resp)
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -1118,6 +1134,18 @@ async def get_attendance_analytics(course_id: int) -> str:
 # ======================================================================
 # Local Search Index
 # ======================================================================
+
+
+async def _write_through(thread_id: int) -> None:
+    """Re-fetch a thread and update the local index (best-effort)."""
+    try:
+        course_id = _index._course_map.get(str(thread_id))
+        if course_id is None or not _index.is_loaded(course_id):
+            return
+        raw = await _get_client().get_thread(thread_id)
+        _index.update_thread(course_id, str(thread_id), raw)
+    except Exception:
+        pass  # Write-through is best-effort
 
 
 @mcp.tool()
