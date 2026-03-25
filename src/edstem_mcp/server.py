@@ -509,6 +509,15 @@ async def bulk_recategorise(
     results = await asyncio.gather(*[_update(tid) for tid in thread_ids])
     succeeded = sum(1 for r in results if r["ok"])
     failed = [r for r in results if not r["ok"]]
+    # Invalidate index cache for affected courses
+    if succeeded:
+        affected_courses = {
+            _index.get_course_for_thread(str(tid))
+            for tid in thread_ids
+            if _index.get_course_for_thread(str(tid)) is not None
+        }
+        for cid in affected_courses:
+            _invalidate_cache(cid)
     summary: dict = {"updated": succeeded, "total": len(thread_ids)}
     if failed:
         summary["failed"] = failed
@@ -1233,20 +1242,29 @@ async def search_index(
                 cache_path.unlink(missing_ok=True)
                 meta_path.unlink(missing_ok=True)
 
+    # Read meta once (reused for staleness check and result annotation)
+    cached_meta: dict | None = None
+    if meta_path.exists():
+        try:
+            cached_meta = json.loads(meta_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
     if not _index.is_loaded(course_id):
         needs_sync = True
-    elif meta_path.exists():
+    elif cached_meta:
         # Check staleness
         try:
-            meta = json.loads(meta_path.read_text())
-            last = datetime.fromisoformat(meta["last_synced"])
+            last = datetime.fromisoformat(cached_meta["last_synced"])
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
             age = (datetime.now(timezone.utc) - last).total_seconds() / 60
             if age > _STALE_MINUTES:
                 needs_sync = True
-        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+        except (KeyError, ValueError):
             needs_sync = True
+    else:
+        needs_sync = True
 
     if needs_sync:
         sync_result = await sync_index(course_id)
@@ -1254,6 +1272,12 @@ async def search_index(
             # If sync fails but we have a stale index, use it anyway
             if not _index.is_loaded(course_id):
                 return sync_result
+        # Re-read meta after sync
+        if meta_path.exists():
+            try:
+                cached_meta = json.loads(meta_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                pass
 
     result = _index.search(
         course_id, query, limit=limit,
@@ -1262,13 +1286,9 @@ async def search_index(
         is_answered=is_answered,
     )
 
-    # Add last_synced from meta
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text())
-            result["last_synced"] = meta.get("last_synced")
-        except (json.JSONDecodeError, OSError):
-            pass
+    # Annotate result with last_synced
+    if cached_meta:
+        result["last_synced"] = cached_meta.get("last_synced")
 
     return _json(result)
 

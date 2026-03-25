@@ -925,8 +925,11 @@ async def test_search_index(mock_client, tmp_path, monkeypatch):
             "comments": [],
         },
     ]
-    # Build index directly
+    # Build index directly and write fresh meta so staleness check passes
     _index.build(1, threads)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    (tmp_path / "1.meta.json").write_text(json.dumps({"last_synced": now, "thread_count": 2}))
 
     result = _parse(await search_index(1, "assignment"))
     assert len(result["results"]) == 1
