@@ -1115,12 +1115,13 @@ async def test_get_discussion_threads_json():
         from edstem_mcp.client import EdClient
         client = EdClient.__new__(EdClient)
         client._client = AsyncMock()
-        client._client.get.return_value = mock_response
+        client._client.request.return_value = mock_response
         client.base_url = "https://edstem.org/api"
 
         result = await client.get_discussion_threads_json(31798)
         assert result == [{"number": 1, "title": "Thread 1"}]
-        client._client.get.assert_called_once()
-        # Verify the timeout was 120s
-        call_kwargs = client._client.get.call_args
-        assert call_kwargs.kwargs.get("timeout") is not None
+        client._client.request.assert_called_once()
+        # Verify POST method and timeout
+        call_args = client._client.request.call_args
+        assert call_args.args[0] == "POST"
+        assert call_args.kwargs.get("timeout") is not None

@@ -366,12 +366,11 @@ class EdClient:
         Returns a bare list (not wrapped in a dict). Uses a longer timeout
         since this endpoint returns all threads at once.
 
-        Note: this endpoint requires the region prefix (e.g. /au/api/ instead
-        of /api/), unlike the regular API endpoints.
+        Note: this endpoint requires POST (not GET).
         """
-        region = os.environ.get("ED_REGION", "us")
-        resp = await self._client.get(
-            f"https://edstem.org/{region}/api/courses/{course_id}/analytics/discussion_threads.json",
+        resp = await self._client.request(
+            "POST",
+            f"/courses/{course_id}/analytics/discussion_threads.json",
             timeout=httpx.Timeout(120.0, connect=10.0),
         )
         if not resp.is_success:
