@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from edstem_mcp.client import EdAPIError
+from edstem_mcp import _index
 from edstem_mcp.server import (
     _pii_enabled,
     _scrub_emails,
@@ -35,7 +36,9 @@ from edstem_mcp.server import (
     mark_duplicate,
     pin_thread,
     reply_to_thread,
+    search_index,
     search_threads,
+    sync_index,
     unlock_thread,
     unmark_duplicate,
     unpin_thread,
@@ -858,6 +861,83 @@ async def test_list_users_pii_disabled(mock_client, monkeypatch):
     assert result["users"][0]["id"] == 42
     assert result["users"][0]["email"] == "a@b.com"
     assert set(result["users"][0].keys()) == {"id", "name", "course_role", "email"}
+
+
+# ------------------------------------------------------------------
+# Local Search Index tools
+# ------------------------------------------------------------------
+
+
+async def test_sync_index(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    mock_client.get_discussion_threads_json.return_value = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Thread 1", "text": "Content 1",
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    result = _parse(await sync_index(1))
+    assert result["threads_indexed"] == 1
+    assert result["course_id"] == 1
+    assert "last_synced" in result
+    # Cache file exists
+    assert (tmp_path / "1.json.gz").exists()
+    assert (tmp_path / "1.meta.json").exists()
+    # Index is loaded
+    assert _index.is_loaded(1)
+    _index.clear(1)
+
+
+async def test_search_index(mock_client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1, "title": "Assignment 1", "text": "Help with assignment",
+            "category": "Assignments", "subcategory": "", "type": "question",
+            "votes": 0, "views": 10, "unique_views": 5,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "answers": [
+                {"text": "Check the notes", "user": {"name": "Prof", "email": "p@t.com", "role": "admin"},
+                 "endorsed": True, "comments": []},
+            ],
+            "comments": [],
+        },
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/101",
+            "number": 2, "title": "Exam question", "text": "When is the exam",
+            "category": "General", "subcategory": "", "type": "question",
+            "votes": 0, "views": 5, "unique_views": 3,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-02T00:00:00",
+            "user": {"name": "Bob", "email": "b@c.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    # Build index directly
+    _index.build(1, threads)
+
+    result = _parse(await search_index(1, "assignment"))
+    assert len(result["results"]) == 1
+    assert result["results"][0]["title"] == "Assignment 1"
+
+    # Filter by has_staff_reply
+    result = _parse(await search_index(1, "assignment", has_staff_reply=True))
+    assert len(result["results"]) == 1
+
+    # Filter by category
+    result = _parse(await search_index(1, "exam", category="General"))
+    assert len(result["results"]) == 1
+
+    _index.clear(1)
 
 
 # ------------------------------------------------------------------
