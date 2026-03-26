@@ -2,7 +2,7 @@
 
 ![Lines of code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/januarharianto/ed-mcp/main/.github/badges/loc.json)
 
-An MCP server and CLI for [Ed Discussion](https://edstem.org). It gives LLMs (and you) access to threads, comments, attendance, moderation, and file uploads through 38 tools. Works with Claude Desktop, Claude Code, or any MCP-compatible client.
+An MCP server and CLI for [Ed Discussion](https://edstem.org). It gives LLMs (and you) access to threads, comments, attendance, moderation, file uploads, and instant local search through 43 tools. Works with Claude Desktop, Claude Code, or any MCP-compatible client.
 
 ## What can I do with this?
 
@@ -28,6 +28,8 @@ Here are some more examples:
 | "Show me today's attendance session" | Lists attendance sessions and their check-ins (`list_attendance_sessions`) |
 | "Mark students 12345 and 67890 as present for the Week 3 tutorial" | Manually checks in students by user ID (`manual_check_in`) |
 | "Give me an attendance report for the whole course" | Returns all sessions and check-ins in one call (`get_attendance_analytics`) |
+| "Summarise this week's posts with staff answers into a FAQ" | Syncs local index, searches with staff reply filter, returns full content (`sync_index` + `search_index`) |
+| "Find answered threads similar to this question about R errors" | Searches local index with BM25 ranking, stemming, and fuzzy matching (`search_index`) |
 
 ## Setup
 
@@ -194,8 +196,18 @@ After that, commands like `ed threads list` and `ed attendance analytics` will u
 ### Files
 
 - **`upload_file`** -- Upload a file to Ed and get its URL.
+- **`upload_file_url`** -- Upload a file from a URL directly to Ed (no local download needed).
 - **`download_file`** -- Download a file from an Ed CDN URL to a local path.
 - **`download_thread_files`** -- Batch download all images and attachments from a thread.
+
+### Local search
+
+These tools provide instant, offline, full-text search across an entire course's threads. The search index is built from a bulk download of all threads and uses SQLite FTS5 with BM25 ranking and Porter stemming. No new dependencies -- `sqlite3` is part of Python's standard library.
+
+- **`sync_index`** -- Download all threads for a course and build a local search index. Takes ~0.4 seconds. Call this once, then use `search_index` for instant results.
+- **`search_index`** -- Search the local index with BM25 ranking. Supports phrases (`"peer review"`), prefix matching (`assign*`), boolean operators (`AND`/`OR`/`NOT`), and column-specific queries (`title:exam`, `staff_replies:deadline`). Filter by category, type, staff replies, or answered status. Returns full thread content for top results. Auto-syncs on first call and refreshes when stale (>30 minutes).
+
+After you reply to, edit, create, or delete a thread, the local index is automatically updated (write-through).
 
 ## Response efficiency
 
@@ -218,6 +230,7 @@ Use `get_thread` or `get_course_thread` when you need full thread content.
 | `ED_BASE_URL` | No | API base URL (defaults to `https://edstem.org/api`) |
 | `ED_STRIP_PII` | No | Strip emails, user IDs, avatars from responses (defaults to `true`; set to `false` to include all fields) |
 | `ED_REGION` | No | Region prefix for Ed URLs in responses -- e.g. `au`, `us` (defaults to `us`) |
+| `ED_INDEX_PATH` | No | Directory for the local search index cache (defaults to `~/.cache/edstem-mcp`) |
 
 ## License
 
