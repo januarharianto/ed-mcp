@@ -512,9 +512,8 @@ async def bulk_recategorise(
     # Invalidate index cache for affected courses
     if succeeded:
         affected_courses = {
-            _index.get_course_for_thread(str(tid))
-            for tid in thread_ids
-            if _index.get_course_for_thread(str(tid)) is not None
+            cid for tid in thread_ids
+            if (cid := _index.get_course_for_thread(str(tid))) is not None
         }
         for cid in affected_courses:
             _invalidate_cache(cid)
