@@ -76,6 +76,7 @@ def test_normalise_bulk():
         "number": 1,
         "title": "Welcome!",
         "text": "Hello everyone",
+        "document": '<document version="2.0"><paragraph>Hello everyone</paragraph></document>',
         "category": "General",
         "subcategory": "",
         "type": "announcement",
@@ -100,9 +101,10 @@ def test_normalise_bulk():
     assert row[1] == "1"        # number
     assert row[2] == "31798"    # course_id
     assert row[4] == "Welcome!" # title
-    assert row[5] == "Hello everyone"  # body
+    assert "Hello everyone" in row[5]  # body (from document, XML stripped)
     assert "Nice!" in row[6]    # replies
     assert row[13] == "false"   # has_staff_reply (only student comment)
+    assert row[21] == ""        # images (none in this thread)
 
 
 def test_normalise_bulk_with_answers():
@@ -111,6 +113,7 @@ def test_normalise_bulk_with_answers():
         "number": 42,
         "title": "Help",
         "text": "Question here",
+        "document": '<document version="2.0"><paragraph>Question here</paragraph></document>',
         "category": "Labs",
         "subcategory": "Lab 1",
         "type": "question",
@@ -262,4 +265,85 @@ def test_search_malformed_query_falls_back():
     result = search(1, "AND")
     # Should not raise, may return 0 or 1 results
     assert "results" in result
+    clear(1)
+
+
+def test_images_extracted():
+    import json
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1,
+            "title": "Thread with image",
+            "text": "Check out this plot",
+            "document": '<document version="2.0"><paragraph>Check out this plot</paragraph>'
+                        '<figure><image src="https://static.au.edusercontent.com/files/abc123" '
+                        'width="800" height="600"/></figure></document>',
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    build(1, threads)
+    result = search(1, "plot")
+    assert len(result["results"]) == 1
+    images = json.loads(result["results"][0]["images"])
+    assert "https://static.au.edusercontent.com/files/abc123" in images
+    clear(1)
+
+
+def test_no_images():
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1,
+            "title": "Plain thread",
+            "text": "Just text",
+            "document": '<document version="2.0"><paragraph>Just text</paragraph></document>',
+            "category": "General", "subcategory": "", "type": "post",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Alice", "email": "a@b.com", "role": "student"},
+            "comments": [],
+        },
+    ]
+    build(1, threads)
+    result = search(1, "text")
+    assert result["results"][0]["images"] == ""
+    clear(1)
+
+
+def test_images_from_replies():
+    import json
+    threads = [
+        {
+            "url": "https://edstem.org/au/courses/1/discussion/100",
+            "number": 1,
+            "title": "Question",
+            "text": "Help",
+            "document": '<document version="2.0"><paragraph>Help</paragraph></document>',
+            "category": "General", "subcategory": "", "type": "question",
+            "votes": 0, "views": 0, "unique_views": 0,
+            "private": False, "anonymous": False, "endorsed": False,
+            "created_at": "2026-01-01T00:00:00",
+            "user": {"name": "Student", "email": "s@t.com", "role": "student"},
+            "comments": [
+                {
+                    "text": "See this screenshot",
+                    "document": '<document version="2.0"><figure><image src="https://static.au.edusercontent.com/files/reply_img" width="400" height="300"/></figure></document>',
+                    "user": {"name": "Prof", "email": "p@t.com", "role": "admin"},
+                    "comments": [],
+                },
+            ],
+        },
+    ]
+    build(1, threads)
+    result = search(1, "Help")
+    assert len(result["results"]) == 1
+    images = json.loads(result["results"][0]["images"])
+    assert "https://static.au.edusercontent.com/files/reply_img" in images
     clear(1)

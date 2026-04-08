@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sqlite3
@@ -19,6 +20,29 @@ _XML_TAG_RE = re.compile(r"<[^>]+>")
 
 def _strip_xml(xml: str) -> str:
     return _XML_TAG_RE.sub(" ", xml).strip()
+
+
+_IMAGE_RE = re.compile(r'<image\s[^>]*src="([^"]+)"')
+_FILE_RE = re.compile(r'<file\s[^>]*url="([^"]+)"')
+_VIDEO_RE = re.compile(r'<video\s[^>]*url="([^"]+)"')
+
+
+def _extract_media(xml: str) -> list[str]:
+    """Extract image, file, and video URLs from Ed XML."""
+    urls: list[str] = []
+    urls.extend(_IMAGE_RE.findall(xml))
+    urls.extend(_FILE_RE.findall(xml))
+    urls.extend(_VIDEO_RE.findall(xml))
+    return urls
+
+
+def _collect_media(items: list[dict], xml_field: str = "document") -> list[str]:
+    """Recursively extract media URLs from items and their nested comments."""
+    urls: list[str] = []
+    for item in items:
+        urls.extend(_extract_media(item.get(xml_field, "")))
+        urls.extend(_collect_media(item.get("comments") or [], xml_field=xml_field))
+    return urls
 
 
 # ------------------------------------------------------------------
@@ -83,6 +107,7 @@ _CREATE_TABLE = '''
         views UNINDEXED,
         unique_views UNINDEXED,
         created_at UNINDEXED,
+        images UNINDEXED,
         tokenize='porter'
     )
 '''
@@ -92,6 +117,7 @@ _BM25_WEIGHTS = (
     5.0, 1.0, 0.5, 2.0,
     0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
+    0,
 )
 
 _BM25_EXPR = f"bm25(threads, {', '.join(str(w) for w in _BM25_WEIGHTS)})"
@@ -103,6 +129,7 @@ _COLUMNS = (
     "category", "subcategory", "type", "user_name", "user_role",
     "has_staff_reply", "is_answered", "endorsed",
     "comment_count", "votes", "views", "unique_views", "created_at",
+    "images",
 )
 
 _SUMMARY_RESULT_KEYS = {
@@ -130,16 +157,20 @@ def _normalise_bulk(thread: dict, course_id: int) -> tuple:
     url = thread.get("url", "")
     thread_id = url.rstrip("/").split("/")[-1].split("?")[0]
 
+    doc = thread.get("document", "")
+    body = _strip_xml(doc)
+
     all_items = (thread.get("answers") or []) + (thread.get("comments") or [])
     replies = "\n".join(_collect_replies(all_items))
     staff_replies = "\n".join(_collect_replies(all_items, staff_only=True))
 
     if _pii_enabled():
-        body = _scrub_emails(thread.get("text", ""))
+        body = _scrub_emails(body)
         replies = _scrub_emails(replies)
         staff_replies = _scrub_emails(staff_replies)
-    else:
-        body = thread.get("text", "")
+
+    media_urls = _extract_media(doc)
+    media_urls.extend(_collect_media(all_items))
 
     has_staff_reply = bool(staff_replies)
     is_answered = any(a.get("endorsed") for a in (thread.get("answers") or [])) or (
@@ -168,6 +199,7 @@ def _normalise_bulk(thread: dict, course_id: int) -> tuple:
         str(thread.get("views", 0)),
         str(thread.get("unique_views", 0)),
         thread.get("created_at", ""),
+        json.dumps(media_urls) if media_urls else "",
     )
 
 
@@ -178,17 +210,21 @@ def _normalise_api(raw: dict) -> tuple:
     course_id = str(t.get("course_id", ""))
     url = _thread_url(int(course_id), int(thread_id)) if course_id and thread_id else ""
 
+    content = t.get("content", "")
     all_items = (t.get("answers") or []) + (t.get("comments") or [])
     replies_parts = _collect_replies(all_items, text_field="content", role_field="course_role")
     staff_parts = _collect_replies(all_items, staff_only=True, text_field="content", role_field="course_role")
     replies = "\n".join(_strip_xml(r) for r in replies_parts)
     staff_replies = "\n".join(_strip_xml(r) for r in staff_parts)
 
-    body = _strip_xml(t.get("content", ""))
+    body = _strip_xml(content)
     if _pii_enabled():
         body = _scrub_emails(body)
         replies = _scrub_emails(replies)
         staff_replies = _scrub_emails(staff_replies)
+
+    media_urls = _extract_media(content)
+    media_urls.extend(_collect_media(all_items, xml_field="content"))
 
     has_staff_reply = bool(staff_replies)
     is_answered = t.get("is_answered", False)
@@ -215,6 +251,7 @@ def _normalise_api(raw: dict) -> tuple:
         str(t.get("view_count", 0)),
         "0",
         t.get("created_at", ""),
+        json.dumps(media_urls) if media_urls else "",
     )
 
 

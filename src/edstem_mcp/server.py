@@ -1209,6 +1209,7 @@ async def search_index(
     if needs_sync:
         sync_result = await sync_index(course_id)
         if sync_result.startswith("Error"):
+            # If sync fails but a stale index exists, use it
             if not _index.is_loaded(course_id):
                 return sync_result
 
