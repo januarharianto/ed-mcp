@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from edstem_mcp.client import EdAPIError
 from edstem_mcp import _index
 from edstem_mcp.server import (
+    _last_synced,
     _pii_enabled,
     _scrub_emails,
     _strip_user_pii,
@@ -871,8 +872,7 @@ async def test_list_users_pii_disabled(mock_client, monkeypatch):
 # ------------------------------------------------------------------
 
 
-async def test_sync_index(mock_client, tmp_path, monkeypatch):
-    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+async def test_sync_index(mock_client):
     mock_client.get_discussion_threads_json.return_value = [
         {
             "url": "https://edstem.org/au/courses/1/discussion/100",
@@ -889,16 +889,15 @@ async def test_sync_index(mock_client, tmp_path, monkeypatch):
     assert result["threads_indexed"] == 1
     assert result["course_id"] == 1
     assert "last_synced" in result
-    # Cache file exists
-    assert (tmp_path / "1.json.gz").exists()
-    assert (tmp_path / "1.meta.json").exists()
-    # Index is loaded
+    # In-memory state updated
     assert _index.is_loaded(1)
+    assert _last_synced.get(1) == result["last_synced"]
     _index.clear(1)
+    _last_synced.pop(1, None)
 
 
-async def test_search_index(mock_client, tmp_path, monkeypatch):
-    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
+async def test_search_index(mock_client):
+    from datetime import datetime, timezone
     threads = [
         {
             "url": "https://edstem.org/au/courses/1/discussion/100",
@@ -925,11 +924,9 @@ async def test_search_index(mock_client, tmp_path, monkeypatch):
             "comments": [],
         },
     ]
-    # Build index directly and write fresh meta so staleness check passes
+    # Build index directly and prime _last_synced so staleness check passes
     _index.build(1, threads)
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).isoformat()
-    (tmp_path / "1.meta.json").write_text(json.dumps({"last_synced": now, "thread_count": 2}))
+    _last_synced[1] = datetime.now(timezone.utc).isoformat()
 
     result = _parse(await search_index(1, "assignment"))
     assert len(result["results"]) == 1
@@ -944,6 +941,7 @@ async def test_search_index(mock_client, tmp_path, monkeypatch):
     assert len(result["results"]) == 1
 
     _index.clear(1)
+    _last_synced.pop(1, None)
 
 
 # ------------------------------------------------------------------
@@ -1027,14 +1025,14 @@ async def test_delete_write_through(mock_client, tmp_path, monkeypatch):
     _index.clear(1)
 
 
-async def test_search_index_auto_loads_from_cache(mock_client, tmp_path, monkeypatch):
-    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
-    # Write a cache file directly
-    import gzip
-    threads = [
+async def test_search_index_auto_syncs_when_not_loaded(mock_client):
+    # No index in memory — search should auto-sync from API
+    assert not _index.is_loaded(1)
+    _last_synced.pop(1, None)
+    mock_client.get_discussion_threads_json.return_value = [
         {
             "url": "https://edstem.org/au/courses/1/discussion/100",
-            "number": 1, "title": "Cached thread", "text": "From cache",
+            "number": 1, "title": "Synced thread", "text": "From API",
             "category": "General", "subcategory": "", "type": "post",
             "votes": 0, "views": 0, "unique_views": 0,
             "private": False, "anonymous": False, "endorsed": False,
@@ -1043,24 +1041,18 @@ async def test_search_index_auto_loads_from_cache(mock_client, tmp_path, monkeyp
             "comments": [],
         },
     ]
-    with gzip.open(tmp_path / "1.json.gz", "wt", encoding="utf-8") as f:
-        json.dump(threads, f)
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).isoformat()
-    (tmp_path / "1.meta.json").write_text(json.dumps({"last_synced": now, "thread_count": 1}))
-
-    # No index in memory — search should auto-load from cache (and meta is fresh, no re-sync)
-    assert not _index.is_loaded(1)
-    result = _parse(await search_index(1, "cached"))
+    result = _parse(await search_index(1, "synced"))
     assert len(result["results"]) == 1
-    assert result["results"][0]["title"] == "Cached thread"
+    assert result["results"][0]["title"] == "Synced thread"
     assert "last_synced" in result
+    mock_client.get_discussion_threads_json.assert_called_once_with(1)
     _index.clear(1)
+    _last_synced.pop(1, None)
 
 
-async def test_search_index_auto_syncs_when_no_cache(mock_client, tmp_path, monkeypatch):
-    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
-    mock_client.get_discussion_threads_json.return_value = [
+async def test_search_index_auto_syncs_when_last_synced_missing(mock_client):
+    from datetime import datetime, timezone
+    threads = [
         {
             "url": "https://edstem.org/au/courses/1/discussion/100",
             "number": 1, "title": "Fresh sync", "text": "Just synced",
@@ -1072,23 +1064,24 @@ async def test_search_index_auto_syncs_when_no_cache(mock_client, tmp_path, monk
             "comments": [],
         },
     ]
+    # Index is loaded but _last_synced has no entry — should trigger re-sync
+    _index.build(1, threads)
+    _last_synced.pop(1, None)
+    mock_client.get_discussion_threads_json.return_value = threads
 
-    # No index, no cache — search should auto-sync
     result = _parse(await search_index(1, "synced"))
     assert len(result["results"]) == 1
     mock_client.get_discussion_threads_json.assert_called_once_with(1)
     _index.clear(1)
+    _last_synced.pop(1, None)
 
 
-async def test_search_index_corrupted_cache(mock_client, tmp_path, monkeypatch):
-    monkeypatch.setenv("ED_INDEX_PATH", str(tmp_path))
-    # Write a corrupted cache file
-    (tmp_path / "1.json.gz").write_bytes(b"not valid gzip")
-
-    mock_client.get_discussion_threads_json.return_value = [
+async def test_search_index_auto_syncs_when_stale(mock_client):
+    from datetime import datetime, timezone, timedelta
+    threads = [
         {
             "url": "https://edstem.org/au/courses/1/discussion/100",
-            "number": 1, "title": "After corruption", "text": "Recovered",
+            "number": 1, "title": "Stale data", "text": "Old content",
             "category": "General", "subcategory": "", "type": "post",
             "votes": 0, "views": 0, "unique_views": 0,
             "private": False, "anonymous": False, "endorsed": False,
@@ -1097,11 +1090,17 @@ async def test_search_index_corrupted_cache(mock_client, tmp_path, monkeypatch):
             "comments": [],
         },
     ]
+    # Index is loaded but _last_synced is old (>30 min) — should trigger re-sync
+    _index.build(1, threads)
+    old_time = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+    _last_synced[1] = old_time
+    mock_client.get_discussion_threads_json.return_value = threads
 
-    # Should delete corrupted cache, auto-sync, and return results
-    result = _parse(await search_index(1, "recovered"))
+    result = _parse(await search_index(1, "stale"))
     assert len(result["results"]) == 1
+    mock_client.get_discussion_threads_json.assert_called_once_with(1)
     _index.clear(1)
+    _last_synced.pop(1, None)
 
 
 # ------------------------------------------------------------------

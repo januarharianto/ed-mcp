@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
 import json
 import logging
 import os
@@ -42,6 +41,7 @@ mcp = FastMCP("edstem")
 
 # Lazy-initialised client (created on first tool call)
 _client: EdClient | None = None
+_last_synced: dict[int, str] = {}
 
 
 def _get_client() -> EdClient:
@@ -49,13 +49,6 @@ def _get_client() -> EdClient:
     if _client is None:
         _client = EdClient()
     return _client
-
-
-def _cache_dir() -> Path:
-    """Return the cache directory for index data."""
-    base = Path(os.environ.get("ED_INDEX_PATH", "~/.cache/edstem-mcp")).expanduser()
-    base.mkdir(parents=True, exist_ok=True)
-    return base
 
 
 # ======================================================================
@@ -413,7 +406,6 @@ async def create_thread(
             try:
                 raw = await _get_client().get_thread(t["id"])
                 _index.update_thread(course_id, str(t["id"]), raw)
-                _invalidate_cache(course_id)
             except Exception:
                 logger.debug("Write-through failed for thread %s", t["id"], exc_info=True)
         return _json({
@@ -509,14 +501,6 @@ async def bulk_recategorise(
     results = await asyncio.gather(*[_update(tid) for tid in thread_ids])
     succeeded = sum(1 for r in results if r["ok"])
     failed = [r for r in results if not r["ok"]]
-    # Invalidate index cache for affected courses
-    if succeeded:
-        affected_courses = {
-            cid for tid in thread_ids
-            if (cid := _index.get_course_for_thread(str(tid))) is not None
-        }
-        for cid in affected_courses:
-            _invalidate_cache(cid)
     summary: dict = {"updated": succeeded, "total": len(thread_ids)}
     if failed:
         summary["failed"] = failed
@@ -537,7 +521,6 @@ async def delete_thread(thread_id: int) -> str:
         cid = _index.get_course_for_thread(tid)
         if cid is not None:
             _index.delete_thread(cid, tid)
-            _invalidate_cache(cid)
         return "Thread deleted."
     except EdAPIError as e:
         return f"Error: {e.message}"
@@ -1146,12 +1129,6 @@ async def get_attendance_analytics(course_id: int) -> str:
 # ======================================================================
 
 
-def _invalidate_cache(course_id: int) -> None:
-    """Delete the meta file so the next search_index triggers a re-sync."""
-    meta_path = _cache_dir() / f"{course_id}.meta.json"
-    meta_path.unlink(missing_ok=True)
-
-
 async def _write_through(thread_id: int) -> None:
     """Re-fetch a thread and update the local index (best-effort)."""
     try:
@@ -1160,14 +1137,13 @@ async def _write_through(thread_id: int) -> None:
             return
         raw = await _get_client().get_thread(thread_id)
         _index.update_thread(course_id, str(thread_id), raw)
-        _invalidate_cache(course_id)
     except Exception:
         logger.debug("Write-through failed for thread %s", thread_id, exc_info=True)
 
 
 @mcp.tool()
 async def sync_index(course_id: int) -> str:
-    """Sync the local search index for a course. Downloads all threads and builds an in-memory search index for fast local search. Takes ~2-3 seconds. Call this before search_index, or to refresh stale data.
+    """Sync the local search index for a course. Downloads all threads and builds an in-memory search index for fast local search. Call this before search_index, or to refresh stale data.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -1183,18 +1159,9 @@ async def sync_index(course_id: int) -> str:
     except Exception as e:
         return f"Error: Failed to download thread data. {e}"
 
-    # Cache to disk
-    cache = _cache_dir()
-    cache_path = cache / f"{course_id}.json.gz"
-    with gzip.open(cache_path, "wt", encoding="utf-8") as f:
-        json.dump(threads, f)
-
-    # Build in-memory index
     count = _index.build(course_id, threads)
-
     now = datetime.now(timezone.utc).isoformat()
-    meta = {"last_synced": now, "thread_count": count}
-    (cache / f"{course_id}.meta.json").write_text(json.dumps(meta))
+    _last_synced[course_id] = now
 
     elapsed = round(time.monotonic() - start, 2)
     return _json({"course_id": course_id, "threads_indexed": count,
@@ -1211,7 +1178,7 @@ async def search_index(
     has_staff_reply: bool | None = None,
     is_answered: bool | None = None,
 ) -> str:
-    """Search the local index for a course. Returns BM25-ranked results with full content for top results. If no index exists, rebuilds from cache or triggers a sync.
+    """Search the local index for a course. Returns BM25-ranked results with full content for top results. If no index exists or data is stale, triggers a sync automatically.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -1224,59 +1191,26 @@ async def search_index(
     """
     _STALE_MINUTES = 30
 
-    # Check if a re-sync is needed (stale or not loaded)
-    needs_sync = False
-    cache = _cache_dir()
-    meta_path = cache / f"{course_id}.meta.json"
-
-    if not _index.is_loaded(course_id):
-        # Try loading from cache first
-        cache_path = cache / f"{course_id}.json.gz"
-        if cache_path.exists():
-            try:
-                with gzip.open(cache_path, "rt", encoding="utf-8") as f:
-                    threads = json.load(f)
-                _index.build(course_id, threads)
-            except (json.JSONDecodeError, OSError):
-                cache_path.unlink(missing_ok=True)
-                meta_path.unlink(missing_ok=True)
-
-    # Read meta once (reused for staleness check and result annotation)
-    cached_meta: dict | None = None
-    if meta_path.exists():
-        try:
-            cached_meta = json.loads(meta_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    if not _index.is_loaded(course_id):
-        needs_sync = True
-    elif cached_meta:
-        # Check staleness
-        try:
-            last = datetime.fromisoformat(cached_meta["last_synced"])
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
-            age = (datetime.now(timezone.utc) - last).total_seconds() / 60
-            if age > _STALE_MINUTES:
-                needs_sync = True
-        except (KeyError, ValueError):
+    needs_sync = not _index.is_loaded(course_id)
+    if not needs_sync:
+        last = _last_synced.get(course_id)
+        if last is None:
             needs_sync = True
-    else:
-        needs_sync = True
+        else:
+            try:
+                synced_at = datetime.fromisoformat(last)
+                if synced_at.tzinfo is None:
+                    synced_at = synced_at.replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - synced_at).total_seconds() / 60
+                needs_sync = age > _STALE_MINUTES
+            except ValueError:
+                needs_sync = True
 
     if needs_sync:
         sync_result = await sync_index(course_id)
         if sync_result.startswith("Error"):
-            # If sync fails but we have a stale index, use it anyway
             if not _index.is_loaded(course_id):
                 return sync_result
-        # Re-read meta after sync
-        if meta_path.exists():
-            try:
-                cached_meta = json.loads(meta_path.read_text())
-            except (json.JSONDecodeError, OSError):
-                pass
 
     result = _index.search(
         course_id, query, limit=limit,
@@ -1285,10 +1219,7 @@ async def search_index(
         is_answered=is_answered,
     )
 
-    # Annotate result with last_synced
-    if cached_meta:
-        result["last_synced"] = cached_meta.get("last_synced")
-
+    result["last_synced"] = _last_synced.get(course_id)
     return _json(result)
 
 

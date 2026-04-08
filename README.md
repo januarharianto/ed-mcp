@@ -230,7 +230,6 @@ Use `get_thread` or `get_course_thread` when you need full thread content.
 | `ED_BASE_URL` | No | API base URL (defaults to `https://edstem.org/api`) |
 | `ED_STRIP_PII` | No | Strip emails, user IDs, avatars from responses (defaults to `true`; set to `false` to include all fields) |
 | `ED_REGION` | No | Region prefix for Ed URLs in responses -- e.g. `au`, `us` (defaults to `us`) |
-| `ED_INDEX_PATH` | No | Directory for the local search index cache (defaults to `~/.cache/edstem-mcp`) |
 
 ## License
 
