@@ -783,8 +783,6 @@ async def download_file(url: str) -> str:
         return f"Error: {e.message}"
 
 
-_IMAGE_SRC_RE = re.compile(r'<image\s[^>]*src="([^"]+)"')
-_FILE_URL_RE = re.compile(r'<file\s[^>]*url="([^"]+)"')
 
 
 @mcp.tool()
@@ -809,8 +807,8 @@ async def download_thread_files(thread_id: int) -> str:
 
         urls = []
         for text in all_content:
-            urls.extend(("image", u) for u in _IMAGE_SRC_RE.findall(text))
-            urls.extend(("file", u) for u in _FILE_URL_RE.findall(text))
+            urls.extend(("image", u) for u in _index._IMAGE_RE.findall(text))
+            urls.extend(("file", u) for u in _index._FILE_RE.findall(text))
 
         if not urls:
             return _json({"files": [], "message": "No images or files found in this thread."})
