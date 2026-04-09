@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## v0.10.0 (2026-04-09)
+
+### Feat
+
+- index from document field, extract media URLs
+- auto-resync index when stale (>30 minutes)
+- add write-through index updates for reply, edit, create, delete
+- add sync_index and search_index MCP tools
+- add bulk discussion threads endpoint to client
+- add FTS5 index module with build and search
+
+### Fix
+
+- address PR review feedback (connection leak, cache invalidation, encapsulation)
+- use POST for bulk analytics endpoint
+- use region prefix for analytics bulk endpoint
+
+### Refactor
+
+- deduplicate image/file regex patterns in server.py
+- remove disk cache from search index
+- eliminate double lookup in bulk_recategorise cache invalidation
+- simplify code after review
+- update search_threads docstring to reference search_index
+- inline _compact() into dict comprehensions
+
 ## v0.9.0 (2026-03-25)
 
 ### Feat
