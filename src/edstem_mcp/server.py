@@ -37,7 +37,45 @@ from edstem_mcp.client import EdAPIError, EdClient
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("edstem")
+mcp = FastMCP(
+    "edstem",
+    instructions=(
+        "Ed Discussion (edstem.org) MCP server.\n\n"
+        "## Searching and browsing threads\n"
+        "DEFAULT to `search_index` for any thread search, browse, filter, or "
+        "lookup. It runs against a local BM25 index over all threads in the "
+        "course, supports phrase/prefix/boolean/column queries, and "
+        "auto-syncs when the index is missing or stale (>30 min). You almost "
+        "never need to call `sync_index` manually — `search_index` handles "
+        "it. To force a refresh, call `sync_index` explicitly. If a refresh "
+        "fails but a previous index exists, `search_index` falls back to the "
+        "stale data and surfaces the original `last_synced` timestamp; check "
+        "it before treating results as fresh.\n\n"
+        "Use the API-backed tools `list_threads` and `search_threads` ONLY "
+        "as a fallback. Real cases where the index cannot serve:\n"
+        "- **Freshness:** \"latest N\" where staleness up to 30 min would "
+        "matter (e.g. \"newest 5 unanswered posts\").\n"
+        "- **Sort by votes or activity:** `sort=top` or `sort=trending` — "
+        "the index only orders by recency or BM25 relevance.\n"
+        "- **Pagination beyond the first page:** the index supports `limit` "
+        "but no `offset`. For deep paging, use `list_threads`.\n"
+        "- **Triage filters not in the index:** `unanswered`, `unresolved`, "
+        "`new_replies`. (`is_answered=true` IS in the index, but its inverse "
+        "is not.)\n"
+        "- **Personal/per-user filters:** `unread`, `starred`, `watching`, "
+        "`mine`, `following` — these reflect viewer state and are not "
+        "indexed.\n"
+        "- **Visibility filters:** `private`, `public`, `staff`, `endorsed` "
+        "— not in the index schema.\n"
+        "- **Exclude pinned announcements:** `search_threads` has "
+        "`exclude_pinned`; the index has no `is_pinned` field.\n"
+        "- **Index unavailable** or sync fails with no prior index.\n\n"
+        "Note: neither toolset filters by subcategory. Use `list_categories` "
+        "to discover them, then filter results client-side.\n\n"
+        "If you reach for `list_threads` or `search_threads`, briefly note "
+        "which case above applies."
+    ),
+)
 
 # Lazy-initialised client (created on first tool call)
 _client: EdClient | None = None
@@ -212,7 +250,7 @@ async def list_threads(
     filter: str | None = None,
     category: str | None = None,
 ) -> str:
-    """Browse threads in a course. Returns compact summaries (no full content). Use get_thread or get_course_thread to read a specific thread's content. For keyword searches, prefer search_threads instead.
+    """FALLBACK browse tool. PREFER `search_index` for almost all browsing — it runs locally over all threads, supports rich queries, and auto-syncs. Only use `list_threads` when you need the freshest N threads (sort=new/top/trending) or a personal/triage filter the index doesn't expose: unread, starred, watching, mine, following, new_replies. Returns compact summaries (no full content). Use get_thread or get_course_thread to read a specific thread.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -342,7 +380,7 @@ async def search_threads(
     type: str | None = None,
     exclude_pinned: bool = False,
 ) -> str:
-    """Search threads in a course by keyword (searches titles and body content). Returns compact summaries. For faster ranked search with stemming and filtering, use search_index (requires sync_index first). Use get_thread to read the full content of a result. Prefer this over list_threads when looking for specific topics.
+    """FALLBACK keyword search via the Ed API. PREFER `search_index` — it's faster, BM25-ranked, supports phrase/prefix/boolean/column queries, and auto-syncs the local index. Only use `search_threads` when the local index is unavailable or sync fails. Returns compact summaries. Use get_thread to read full content of a result.
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -1141,7 +1179,7 @@ async def _write_through(thread_id: int) -> None:
 
 @mcp.tool()
 async def sync_index(course_id: int) -> str:
-    """Sync the local search index for a course. Downloads all threads and builds an in-memory search index for fast local search. Call this before search_index, or to refresh stale data.
+    """Force-refresh the local search index for a course. You usually do NOT need to call this — `search_index` auto-syncs when its index is missing or stale (>30 min). Call `sync_index` directly only to force an immediate refresh after known external changes (e.g. a bulk import you just performed, or to clear a stale-fallback after a previous sync failure). First sync of a large course may take several seconds (full thread download).
 
     Args:
         course_id: The course ID (use list_courses to find it).
@@ -1176,7 +1214,7 @@ async def search_index(
     has_staff_reply: bool | None = None,
     is_answered: bool | None = None,
 ) -> str:
-    """Search the local index for a course. Returns BM25-ranked results with full content for top results. If no index exists or data is stale, triggers a sync automatically.
+    """DEFAULT thread search/browse tool. Searches the local BM25-ranked index over all threads in a course. Returns ranked results with full content for top hits. Auto-syncs when the index is missing or stale (>30 min) — you do NOT need to call `sync_index` first in normal use. Supports phrases, prefix, boolean, and column-specific queries. If a refresh fails but a prior index exists, falls back to the stale data — check the returned `last_synced` timestamp before treating results as fresh. First call on a large unsynced course may take several seconds while the initial sync runs. Use this for any thread lookup, search, or filtered browse before falling back to `list_threads`/`search_threads`.
 
     Args:
         course_id: The course ID (use list_courses to find it).
