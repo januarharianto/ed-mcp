@@ -29,3 +29,6 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+
+# Superpowers implementation plans (local-only, not shared)
+docs/plans/
