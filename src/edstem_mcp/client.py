@@ -350,15 +350,36 @@ class EdClient:
         path = Path(filepath)
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         data = path.read_bytes()
-        return await self._request(
+        result = await self._request(
             "POST",
             "/files",
             files={"attachment": (path.name, data, content_type)},
         )
+        return self._normalise_file_response(result)
 
     async def upload_file_url(self, url: str) -> dict[str, Any]:
         """Upload a file from a URL (no local download needed)."""
-        return await self._post("/files/url", json={"url": url})
+        result = await self._post("/files/url", json={"url": url})
+        return self._normalise_file_response(result)
+
+    @staticmethod
+    def _normalise_file_response(result: dict[str, Any]) -> dict[str, Any]:
+        """Flatten Ed's ``{"file": {...}}`` envelope and add a CDN ``url``.
+
+        Ed's ``POST /files`` responds with ``{"file": {"id", "filename", ...}}``
+        and no explicit URL — the URL is constructed from the file id against
+        the regional CDN. Region defaults to ``au`` and can be overridden via
+        the ``ED_REGION`` environment variable (e.g. ``us``, ``eu``).
+        """
+        file_data = result.get("file", result) or {}
+        file_id = file_data.get("id")
+        if not file_id:
+            return file_data
+        region = os.environ.get("ED_REGION", "au")
+        return {
+            **file_data,
+            "url": f"https://static.{region}.edusercontent.com/files/{file_id}",
+        }
 
     async def get_discussion_threads_json(self, course_id: int) -> list[dict[str, Any]]:
         """Download all threads for a course via the bulk analytics endpoint.

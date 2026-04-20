@@ -81,7 +81,7 @@ _COMMENT_KEYS = {
 
 _USER_KEYS = {"id", "name", "course_role"}
 
-_UPLOAD_KEYS = {"url", "filename"}
+_UPLOAD_KEYS = {"url", "filename", "id"}
 
 # Keys kept in attendance session summaries (list_attendance_sessions).
 _EVENT_SUMMARY_KEYS = {
