@@ -127,6 +127,10 @@ def _summarise_threads(threads: list[dict], course_id: int) -> list[dict]:
             if t.get(k):
                 summary[k] = True
         summary["user"] = t.get("user", {}).get("name", "")
+        # Ed URLs use the global thread id, not the course-local number; include
+        # a pre-built url so callers don't mis-construct links from `number`.
+        if "id" in summary:
+            summary["url"] = _thread_url(course_id, summary["id"])
         result.append(summary)
     return result
 
