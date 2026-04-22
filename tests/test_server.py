@@ -80,8 +80,9 @@ def test_summarise_threads_keeps_only_summary_keys():
     assert "editor_id" not in result[0]
 
 
-def test_summarise_threads_no_url():
-    """URLs are reconstructible from id + course_id — don't waste tokens."""
+def test_summarise_threads_includes_url():
+    """URL is pre-built from the global thread id so callers don't mis-construct
+    links from `number` (which doesn't resolve on Ed)."""
     threads = [{
         "id": 123, "number": 42, "type": "post", "title": "Hello",
         "category": "General", "subcategory": "",
@@ -90,9 +91,9 @@ def test_summarise_threads_no_url():
         "reply_count": 0, "vote_count": 0, "view_count": 0, "unresolved_count": 0,
         "user": {"name": "Alice"},
     }]
-    result = _summarise_threads(threads, course_id=1)
-    assert "url" not in result[0]
-    # But id and number are still present for the LLM to reconstruct if needed
+    result = _summarise_threads(threads, course_id=77)
+    assert result[0]["url"].endswith("/courses/77/discussion/123")
+    assert "/discussion/42" not in result[0]["url"]
     assert result[0]["id"] == 123
     assert result[0]["number"] == 42
 
