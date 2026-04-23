@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## v0.10.1 (2026-04-23)
+
+### Fix
+
+- include url in list_threads and search_threads summaries
+- extract file URL from Ed upload response
+
 ## v0.10.0 (2026-04-09)
 
 ### Feat
