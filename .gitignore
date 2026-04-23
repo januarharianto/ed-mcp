@@ -32,3 +32,6 @@ build/
 
 # Superpowers implementation plans (local-only, not shared)
 docs/plans/
+
+# Local working directory (real course units, scratch notes)
+.local/
